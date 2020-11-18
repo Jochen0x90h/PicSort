@@ -7,7 +7,11 @@
 #include <vector>
 #include <boost/filesystem.hpp>
 #include <boost/range/iterator_range.hpp>
-#include "TinyEXIF.h"
+#include "TinyEXIF.h" // https://github.com/cdcseacave/TinyEXIF
+#include <imgui.h>
+#include "imgui/imgui_impl_glfw.h"
+#include "imgui/imgui_impl_opengl3.h"
+
 
 namespace fs = boost::filesystem;
 
@@ -119,7 +123,6 @@ protected:
 
 
 
-fs::path dir(".");
 std::vector<fs::path> files;
 int fileIndex = 0;
 int fileCount;
@@ -141,7 +144,7 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
 				fileIndex = std::min(fileIndex + 1, fileCount - 1);
 
 			delete picture;
-			picture = new Picture(dir / files[fileIndex]);
+			picture = new Picture(files[fileIndex]);
 		}
 	}
 }
@@ -454,16 +457,34 @@ uint32_t const Image::indices[6] = {
 };
 
 
-int main(int argc, const char **argv) {
-	// read current directory
+std::vector<fs::path> getList(fs::path const &dir) {
+	std::vector<fs::path> list;
 	for (auto &entry : boost::make_iterator_range(fs::directory_iterator(dir), {})) {
-		std::cout << entry << "\n";
+		fs::path const &path = entry.path();
 
-		fs::path name = entry.path().filename();
+		boost::system::error_code ec;
+		if (fs::is_directory(path, ec))
+			list.push_back(path.filename());
+	}
+	std::sort(list.begin(), list.end());
+	return list;
+}
 
-		if (name.extension() == ".jpg" || name.extension() == ".JPG") {
-			files.push_back(name);
-		}
+
+int main(int argc, const char **argv) {
+	fs::path dir = ".";
+	fs::path targetDir = fs::canonical(dir);
+	std::vector<fs::path> targetList = getList(targetDir);
+	
+	// read current directory
+	for (auto &entry : boost::make_iterator_range(fs::directory_iterator(fs::path(dir)), {})) {
+		//std::cout << entry << "\n";
+
+		fs::path const &path = entry.path();
+		
+		// collect images
+		if (path.extension() == ".jpg" || path.extension() == ".JPG")
+			files.push_back(path);
 	}
 	std::sort(files.begin(), files.end());
 	fileCount = files.size();
@@ -501,6 +522,23 @@ int main(int argc, const char **argv) {
 	glfwSwapInterval(1);
 
 
+	// Setup Dear ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+
+    // Setup Dear ImGui style
+    ImGui::StyleColorsDark();
+    //ImGui::StyleColorsClassic();
+
+    // Setup Platform/Renderer backends
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init();
+
+
+	// create picture from first file in list
 	picture = new Picture(dir / files[0]);
 	
 
@@ -516,10 +554,50 @@ int main(int argc, const char **argv) {
 
 		// process events
 		glfwPollEvents();
+		//glfwWaitEvents();
+		//glfwWaitEventsTimeout(0.03);
 		
 		// exit if all files sorted
 		if (fileCount == 0)
 			break;
+
+		// Start the Dear ImGui frame
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+		// target directory selector
+		{
+			std::vector<fs::path> newTargetList;
+			bool selected = false;
+			std::string current = targetDir.filename().string() + "###target";
+            if (ImGui::Begin(current.c_str(), nullptr, 0)) {
+				// list box containing subdirectories
+				ImGui::PushItemWidth(-1);
+				if (ImGui::ListBoxHeader("", targetList.size(), 10)) {
+					// parent directory
+					if (ImGui::Selectable("..", false)) {
+						targetDir = targetDir.parent_path();
+						newTargetList = getList(targetDir);
+						selected = true;
+					}
+					
+					// subdirectories
+					for (int i = 0; i < targetList.size(); ++i) {
+						if (ImGui::Selectable(targetList[i].c_str(), false)) {
+							targetDir /= targetList[i];
+							newTargetList = getList(targetDir);
+							selected = true;
+						}
+					}
+					ImGui::ListBoxFooter();
+				}
+				ImGui::PopItemWidth();
+			}
+			ImGui::End();
+
+			if (selected)
+				targetList.swap(newTargetList);
+        }
 
 		// set viewport
 		int width, height;
@@ -530,8 +608,13 @@ int main(int argc, const char **argv) {
 		glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 
+		// render image
 		image.set(width, height, picture->getImage());
 		image.render();
+
+		// render gui
+		ImGui::Render();
+		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 		// swap render buffer to screen
 		glfwSwapBuffers(window);
@@ -550,6 +633,10 @@ int main(int argc, const char **argv) {
 	}
 
 	// cleanup
+	ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
 	glfwDestroyWindow(window);
 	glfwTerminate();
 	return 0;

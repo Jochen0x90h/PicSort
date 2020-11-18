@@ -2,6 +2,10 @@ add_executable(picsort
 	glad/glad.c
 	glad/glad.h
 	glad/khrplatform.h
+	imgui/imgui_impl_glfw.cpp
+	imgui/imgui_impl_glfw.h
+	imgui/imgui_impl_opengl3.cpp
+	imgui/imgui_impl_opengl3.h
 	main.cpp
 	TinyEXIF.cpp
 	TinyEXIF.h
