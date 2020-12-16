@@ -7,6 +7,8 @@
 #include <vector>
 #include <boost/filesystem.hpp>
 #include <boost/range/iterator_range.hpp>
+#include <boost/date_time/posix_time/posix_time.hpp>
+#include <boost/date_time/posix_time/conversion.hpp>
 #include "TinyEXIF.h" // https://github.com/cdcseacave/TinyEXIF
 #include <imgui.h>
 #include "imgui/imgui_impl_glfw.h"
@@ -40,6 +42,10 @@ class Picture {
 public:
 
 	Picture(fs::path path) {
+		// get file data
+		std::time_t date = fs::last_write_time(path);
+		this->date = boost::posix_time::to_iso_extended_string(boost::posix_time::from_time_t(date));
+		
 		// determine jpeg size
 		std::ifstream file(path.string(), std::ios::binary | std::ios::ate);
 		int jpegSize = file.tellg();
@@ -113,10 +119,12 @@ public:
 	// get image data
 	ImageData getImage() {return {this->width, this->height, this->orientation, this->imgBuf};}
 
+	std::string date;
+	int width, height;
+
 protected:
 	char const *action;
 	char const *error;
-	int width, height;
 	int orientation = 0;
 	unsigned char *imgBuf = NULL;
 };
@@ -125,8 +133,8 @@ protected:
 
 std::vector<fs::path> files;
 int fileIndex = 0;
-int fileCount;
 Picture* picture;
+fs::path targetDir;
 
 static void errorCallback(int error, const char* description) {
 	fprintf(stderr, "Error: %s\n", description);
@@ -134,17 +142,36 @@ static void errorCallback(int error, const char* description) {
 
 static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 	if (action == GLFW_PRESS) {
+		// esc: exit
 		if (key == GLFW_KEY_ESCAPE)
 			glfwSetWindowShouldClose(window, GLFW_TRUE);
 
+		// up/down: select image
 		if (key == GLFW_KEY_UP || key == GLFW_KEY_DOWN) {
+			int count = int(files.size());
 			if (key == GLFW_KEY_UP)
-				fileIndex = std::max(fileIndex - 1, 0);
+				fileIndex = (fileIndex + count - 1) % count;
 			else
-				fileIndex = std::min(fileIndex + 1, fileCount - 1);
+				fileIndex = (fileIndex + 1) % count;
 
 			delete picture;
 			picture = new Picture(files[fileIndex]);
+		}
+		
+		// space: move image
+		if (key == GLFW_KEY_SPACE && (mods & GLFW_MOD_SHIFT) != 0) {
+			fs::path src = files[fileIndex];
+			fs::path dst = targetDir / src.filename();
+			fs::rename(src, dst);
+			
+			files.erase(files.begin() + fileIndex);
+			fileIndex = std::min(fileIndex, int(files.size()) - 1);
+
+			delete picture;
+			if (!files.empty())
+				picture = new Picture(files[fileIndex]);
+			else
+				picture = nullptr;
 		}
 	}
 }
@@ -473,25 +500,22 @@ std::vector<fs::path> getList(fs::path const &dir) {
 
 int main(int argc, const char **argv) {
 	fs::path dir = ".";
-	fs::path targetDir = fs::canonical(dir);
+	targetDir = fs::canonical(dir);
 	std::vector<fs::path> targetList = getList(targetDir);
 	
 	// read current directory
 	for (auto &entry : boost::make_iterator_range(fs::directory_iterator(fs::path(dir)), {})) {
-		//std::cout << entry << "\n";
-
 		fs::path const &path = entry.path();
 		
 		// collect images
 		if (path.extension() == ".jpg" || path.extension() == ".JPG")
 			files.push_back(path);
 	}
-	std::sort(files.begin(), files.end());
-	fileCount = files.size();
-	if (fileCount == 0) {
+	if (files.empty()) {
 		std::cerr << "No input files";
 		return 0;
 	}
+	std::sort(files.begin(), files.end());
 
 	// init GLFW
 	glfwSetErrorCallback(errorCallback);
@@ -549,16 +573,24 @@ int main(int argc, const char **argv) {
 	// main loop
 	int frameCount = 0;
 	auto start = std::chrono::steady_clock::now();
+	char newDirectoryBuffer[64];
+	newDirectoryBuffer[0] = 0;
+	int count = 5;
 	while (!glfwWindowShouldClose(window)) {
 		auto frameStart = std::chrono::steady_clock::now();
 
 		// process events
-		glfwPollEvents();
-		//glfwWaitEvents();
+		if (count > 0) {
+			glfwPollEvents();
+			--count;
+		} else {
+			glfwWaitEvents();
+			count = 5;
+		}
 		//glfwWaitEventsTimeout(0.03);
 		
 		// exit if all files sorted
-		if (fileCount == 0)
+		if (files.empty())
 			break;
 
 		// Start the Dear ImGui frame
@@ -567,11 +599,20 @@ int main(int argc, const char **argv) {
 
 		// target directory selector
 		{
-			std::vector<fs::path> newTargetList;
-			bool selected = false;
-			std::string current = targetDir.filename().string() + "###target";
-            if (ImGui::Begin(current.c_str(), nullptr, 0)) {
+			std::string target = targetDir.filename().string() + "###target";
+            if (ImGui::Begin(target.c_str(), nullptr, 0)) {
+				// input for new directory
+				if (ImGui::InputText("New Directory", newDirectoryBuffer, std::size(newDirectoryBuffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
+					fs::path newDirectory = newDirectoryBuffer;
+					fs::create_directory(targetDir / newDirectory);
+					newDirectoryBuffer[0] = 0;
+					targetDir /= newDirectory;
+					targetList = getList(targetDir);
+				}
+
 				// list box containing subdirectories
+				std::vector<fs::path> newTargetList;
+				bool selected = false;
 				ImGui::PushItemWidth(-1);
 				if (ImGui::ListBoxHeader("", targetList.size(), 10)) {
 					// parent directory
@@ -592,12 +633,29 @@ int main(int argc, const char **argv) {
 					ImGui::ListBoxFooter();
 				}
 				ImGui::PopItemWidth();
+				if (selected)
+					targetList.swap(newTargetList);
 			}
 			ImGui::End();
-
-			if (selected)
-				targetList.swap(newTargetList);
         }
+        
+        // image info
+        {
+			std::string info = picture->date.substr(0, 10) + "###info";
+			if (ImGui::Begin(info.c_str(), nullptr, 0)) {
+				// ISO date
+				ImGui::LabelText("Date", "%s", picture->date.c_str());
+				
+				// image size
+				std::string size = std::to_string(picture->width) + " x " + std::to_string(picture->height);
+				ImGui::LabelText("Size", "%s", size.c_str());
+				
+				// exists in target directory (by file name)?
+				bool exists = fs::exists(targetDir / files[fileIndex].filename());
+				ImGui::LabelText("Exists", "%s", exists ? "true" : "false");
+			}
+			ImGui::End();
+		}
 
 		// set viewport
 		int width, height;
