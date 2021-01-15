@@ -43,9 +43,9 @@ class Project(ConanFile):
     generators = "cmake"
     exports_sources = "conanfile.py", "CMakeLists.txt", "src/*", "test/*"
     requires = \
-        "boost/1.74.0", \
-        "imgui/1.79", \
+        "boost/1.75.0", \
         "glfw/3.3.2", \
+        "imgui/1.79", \
         "libjpeg-turbo/2.0.5", \
         "tinyxml2/8.0.0"
         

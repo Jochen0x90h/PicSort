@@ -26,7 +26,7 @@ endif()
 
 # conan dependencies
 include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
-conan_basic_setup(TARGETS)
+conan_basic_setup(TARGETS KEEP_RPATHS)
 
 
 add_subdirectory(src)

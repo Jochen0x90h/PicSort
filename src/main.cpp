@@ -11,8 +11,7 @@
 #include <boost/date_time/posix_time/conversion.hpp>
 #include "TinyEXIF.h" // https://github.com/cdcseacave/TinyEXIF
 #include <imgui.h>
-#include "imgui/imgui_impl_glfw.h"
-#include "imgui/imgui_impl_opengl3.h"
+#include "GuiWindow.hpp"
 
 
 namespace fs = boost::filesystem;
@@ -29,7 +28,7 @@ struct ImageData {
 	unsigned char *data;
 };
 
-
+/*
 const char *subsampName[TJ_NUMSAMP] = {
 	"4:4:4", "4:2:2", "4:2:0", "Grayscale", "4:4:0", "4:1:1"
 };
@@ -37,6 +36,7 @@ const char *subsampName[TJ_NUMSAMP] = {
 const char *colorspaceName[TJ_NUMCS] = {
 	"RGB", "YCbCr", "GRAY", "CMYK", "YCCK"
 };
+*/
 
 class Picture {
 public:
@@ -130,67 +130,6 @@ protected:
 };
 
 
-
-std::vector<fs::path> files;
-int fileIndex = 0;
-Picture* picture;
-fs::path targetDir;
-
-static void errorCallback(int error, const char* description) {
-	fprintf(stderr, "Error: %s\n", description);
-}
-
-static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-	if (action == GLFW_PRESS) {
-		// esc: exit
-		if (key == GLFW_KEY_ESCAPE)
-			glfwSetWindowShouldClose(window, GLFW_TRUE);
-
-		// up/down: select image
-		if (key == GLFW_KEY_UP || key == GLFW_KEY_DOWN) {
-			int count = int(files.size());
-			if (key == GLFW_KEY_UP)
-				fileIndex = (fileIndex + count - 1) % count;
-			else
-				fileIndex = (fileIndex + 1) % count;
-
-			delete picture;
-			picture = new Picture(files[fileIndex]);
-		}
-		
-		// space: move image
-		if (key == GLFW_KEY_SPACE && (mods & GLFW_MOD_SHIFT) != 0) {
-			fs::path src = files[fileIndex];
-			fs::path dst = targetDir / src.filename();
-			fs::rename(src, dst);
-			
-			files.erase(files.begin() + fileIndex);
-			fileIndex = std::min(fileIndex, int(files.size()) - 1);
-
-			delete picture;
-			if (!files.empty())
-				picture = new Picture(files[fileIndex]);
-			else
-				picture = nullptr;
-		}
-	}
-}
-
-static void mouseCallback(GLFWwindow* window, int button, int action, int mods) {
-    /*   if (button == GLFW_MOUSE_BUTTON_LEFT) {
-   		if(GLFW_PRESS == action)
-   			lbutton_down = true;
-   		else if(GLFW_RELEASE == action)
-   			lbutton_down = false;
-   	}
-
-   	if(lbutton_down) {
-   		 // do your drag here
-   	}*/
-}
-
-
-
 namespace shader {
 
 GLuint compile(std::string const &name, GLenum type, std::string const &source) {
@@ -250,8 +189,6 @@ GLint getVertexInput(std::string const &programName, GLuint program, std::string
 }
 
 }
-
-
 
 
 struct Vertex {
@@ -402,7 +339,7 @@ public:
 		glBindTexture(GL_TEXTURE_2D, 0);
 	}
 
-	void render() {
+	void draw() {
 		// set program
 		glUseProgram(this->shader);
 
@@ -484,6 +421,7 @@ uint32_t const Image::indices[6] = {
 };
 
 
+// get sorted file list
 std::vector<fs::path> getList(fs::path const &dir) {
 	std::vector<fs::path> list;
 	for (auto &entry : boost::make_iterator_range(fs::directory_iterator(dir), {})) {
@@ -498,85 +436,189 @@ std::vector<fs::path> getList(fs::path const &dir) {
 }
 
 
-int main(int argc, const char **argv) {
-	fs::path dir = ".";
-	targetDir = fs::canonical(dir);
-	std::vector<fs::path> targetList = getList(targetDir);
-	
-	// read current directory
-	for (auto &entry : boost::make_iterator_range(fs::directory_iterator(fs::path(dir)), {})) {
-		fs::path const &path = entry.path();
-		
-		// collect images
-		if (path.extension() == ".jpg" || path.extension() == ".JPG")
-			files.push_back(path);
+// MainWindow
+
+class MainWindow : public GuiWindow {
+public:
+
+	MainWindow(int width, int height, char const *title)
+		: GuiWindow(width, height, title)
+	{
+		fs::path dir = ".";
+
+		// get list of directories in initial target directory
+		this->targetDir = fs::canonical(dir);
+		std::vector<fs::path> targetList = getList(this->targetDir);
+
+		// read current directory to get list of imge files
+		for (auto &entry : boost::make_iterator_range(fs::directory_iterator(fs::path(dir)), {})) {
+			fs::path const &path = entry.path();
+
+			// collect images
+			if (path.extension() == ".jpg" || path.extension() == ".JPG")
+				this->files.push_back(path);
+		}
+		if (this->files.empty()) {
+			std::cerr << "No input files";
+			return;
+		}
+		std::sort(this->files.begin(), this->files.end());
+
+
+		// create picture from first file in list
+		if (!this->files.empty())
+			this->picture = new Picture(dir / this->files[0]);
+
+
+		// init temp variables
+		this->newDirectoryBuffer[0] = 0;
 	}
-	if (files.empty()) {
-		std::cerr << "No input files";
-		return 0;
+
+	~MainWindow() override {
+		delete this->picture;
 	}
-	std::sort(files.begin(), files.end());
 
-	// init GLFW
-	glfwSetErrorCallback(errorCallback);
-	if (!glfwInit())
-	exit(EXIT_FAILURE);
+	bool empty() {return this->files.empty();}
 
-	// create GLFW window and OpenGL 3.3 Core context
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-	//glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GL_TRUE);
-	GLFWwindow *window = glfwCreateWindow(800, 800, "PicSorter", NULL, NULL);
-	if (!window) {
-		glfwTerminate();
-		exit(EXIT_FAILURE);
+protected:
+	bool onKey(int key, int scancode, int action, int modifiers, bool neededByGui) override {
+		if (action == GLFW_PRESS) {
+			// esc: exit
+			if (key == GLFW_KEY_ESCAPE)
+				close();
+
+			// up/down: select next/pevious image
+			if (key == GLFW_KEY_UP || key == GLFW_KEY_DOWN) {
+				int count = int(this->files.size());
+				if (key == GLFW_KEY_UP)
+					this->fileIndex = (this->fileIndex + count - 1) % count;
+				else
+					this->fileIndex = (this->fileIndex + 1) % count;
+
+				delete this->picture;
+				this->picture = new Picture(this->files[this->fileIndex]);
+			}
+
+			// shift-space: move image
+			if (key == GLFW_KEY_SPACE && (modifiers & GLFW_MOD_SHIFT) != 0) {
+				fs::path src = this->files[this->fileIndex];
+				fs::path dst = this->targetDir / src.filename();
+				fs::rename(src, dst);
+
+				this->files.erase(this->files.begin() + this->fileIndex);
+				this->fileIndex = std::min(this->fileIndex, int(this->files.size()) - 1);
+
+				delete this->picture;
+				if (!this->files.empty())
+					this->picture = new Picture(this->files[this->fileIndex]);
+				else
+					this->picture = nullptr;
+			}
+		}
+		return false;
 	}
-	glfwSetKeyCallback(window, keyCallback);
-	glfwSetMouseButtonCallback(window, mouseCallback);
 
-	// make OpenGL context current
-	glfwMakeContextCurrent(window);
+	void onDraw(State const &state) override {
+		// target directory selector
+		{
+			std::string target = this->targetDir.filename().string() + "###target";
+			if (ImGui::Begin(target.c_str(), nullptr, 0)) {
+				// input for new directory
+				if (ImGui::InputText("New Directory", this->newDirectoryBuffer, std::size(this->newDirectoryBuffer),
+					ImGuiInputTextFlags_EnterReturnsTrue))
+				{
+					fs::path newDirectory = this->newDirectoryBuffer;
+					fs::create_directory(this->targetDir / newDirectory);
+					this->newDirectoryBuffer[0] = 0;
+					this->targetDir /= newDirectory;
+					this->targetList = getList(this->targetDir);
+				}
 
-	// load OpenGL functions
-	gladLoadGLLoader((GLADloadproc)glfwGetProcAddress);
+				// list box containing subdirectories
+				std::vector<fs::path> newTargetList;
+				bool selected = false;
+				ImGui::PushItemWidth(-1);
+				if (ImGui::ListBoxHeader("", this->targetList.size(), 10)) {
+					// parent directory
+					if (ImGui::Selectable("..", false)) {
+						this->targetDir = this->targetDir.parent_path();
+						newTargetList = getList(this->targetDir);
+						selected = true;
+					}
 
-	// v-sync
-	glfwSwapInterval(1);
+					// subdirectories
+					for (int i = 0; i < this->targetList.size(); ++i) {
+						if (ImGui::Selectable(this->targetList[i].c_str(), false)) {
+							this->targetDir /= this->targetList[i];
+							newTargetList = getList(this->targetDir);
+							selected = true;
+						}
+					}
+					ImGui::ListBoxFooter();
+				}
+				ImGui::PopItemWidth();
+				if (selected)
+					this->targetList.swap(newTargetList);
+			}
+			ImGui::End();
+		}
+
+		// image info
+		{
+			std::string info = this->picture->date.substr(0, 10) + "###info";
+			if (ImGui::Begin(info.c_str(), nullptr, 0)) {
+				// ISO date
+				ImGui::LabelText("Date", "%s", this->picture->date.c_str());
+
+				// image size
+				std::string size = std::to_string(this->picture->width) + " x " + std::to_string(this->picture->height);
+				ImGui::LabelText("Size", "%s", size.c_str());
+
+				// exists in target directory (by file name)?
+				bool exists = fs::exists(this->targetDir / this->files[this->fileIndex].filename());
+				ImGui::LabelText("Exists", "%s", exists ? "true" : "false");
+			}
+			ImGui::End();
+		}
+
+		// clear screen
+		glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT);
+
+		// render image
+		this->image.set(state.framebufferWidth, state.framebufferHeight, picture->getImage());
+		this->image.draw();
+
+		drawGui();
+	}
 
 
-	// Setup Dear ImGui context
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
-    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+	// source images
+	std::vector<fs::path> files;
+	int fileIndex = 0;
+	Picture* picture = nullptr;
 
-    // Setup Dear ImGui style
-    ImGui::StyleColorsDark();
-    //ImGui::StyleColorsClassic();
+	// target directory and list of directories in target directory
+	fs::path targetDir;
+	std::vector<fs::path> targetList;
 
-    // Setup Platform/Renderer backends
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init();
-
-
-	// create picture from first file in list
-	picture = new Picture(dir / files[0]);
-	
 
 	// class for rendering a picture onto the screen
 	Image image;
 
+	char newDirectoryBuffer[64];
+};
+
+
+
+int main(int argc, const char **argv) {
+	MainWindow window(800, 800, "PicSorter");
 
 	// main loop
 	int frameCount = 0;
 	auto start = std::chrono::steady_clock::now();
-	char newDirectoryBuffer[64];
-	newDirectoryBuffer[0] = 0;
 	int count = 5;
-	while (!glfwWindowShouldClose(window)) {
+	while (!window.isClosed()) {
 		auto frameStart = std::chrono::steady_clock::now();
 
 		// process events
@@ -590,93 +632,10 @@ int main(int argc, const char **argv) {
 		//glfwWaitEventsTimeout(0.03);
 		
 		// exit if all files sorted
-		if (files.empty())
+		if (window.empty())
 			break;
 
-		// Start the Dear ImGui frame
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-
-		// target directory selector
-		{
-			std::string target = targetDir.filename().string() + "###target";
-            if (ImGui::Begin(target.c_str(), nullptr, 0)) {
-				// input for new directory
-				if (ImGui::InputText("New Directory", newDirectoryBuffer, std::size(newDirectoryBuffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
-					fs::path newDirectory = newDirectoryBuffer;
-					fs::create_directory(targetDir / newDirectory);
-					newDirectoryBuffer[0] = 0;
-					targetDir /= newDirectory;
-					targetList = getList(targetDir);
-				}
-
-				// list box containing subdirectories
-				std::vector<fs::path> newTargetList;
-				bool selected = false;
-				ImGui::PushItemWidth(-1);
-				if (ImGui::ListBoxHeader("", targetList.size(), 10)) {
-					// parent directory
-					if (ImGui::Selectable("..", false)) {
-						targetDir = targetDir.parent_path();
-						newTargetList = getList(targetDir);
-						selected = true;
-					}
-					
-					// subdirectories
-					for (int i = 0; i < targetList.size(); ++i) {
-						if (ImGui::Selectable(targetList[i].c_str(), false)) {
-							targetDir /= targetList[i];
-							newTargetList = getList(targetDir);
-							selected = true;
-						}
-					}
-					ImGui::ListBoxFooter();
-				}
-				ImGui::PopItemWidth();
-				if (selected)
-					targetList.swap(newTargetList);
-			}
-			ImGui::End();
-        }
-        
-        // image info
-        {
-			std::string info = picture->date.substr(0, 10) + "###info";
-			if (ImGui::Begin(info.c_str(), nullptr, 0)) {
-				// ISO date
-				ImGui::LabelText("Date", "%s", picture->date.c_str());
-				
-				// image size
-				std::string size = std::to_string(picture->width) + " x " + std::to_string(picture->height);
-				ImGui::LabelText("Size", "%s", size.c_str());
-				
-				// exists in target directory (by file name)?
-				bool exists = fs::exists(targetDir / files[fileIndex].filename());
-				ImGui::LabelText("Exists", "%s", exists ? "true" : "false");
-			}
-			ImGui::End();
-		}
-
-		// set viewport
-		int width, height;
-		glfwGetFramebufferSize(window, &width, &height);
-		glViewport(0, 0, width, height);
-
-		// clear screen
-		glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
-
-		// render image
-		image.set(width, height, picture->getImage());
-		image.render();
-
-		// render gui
-		ImGui::Render();
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-		// swap render buffer to screen
-		glfwSwapBuffers(window);
-
+		window.draw();
 
 		// show frames per second
 		auto now = std::chrono::steady_clock::now();
@@ -687,15 +646,7 @@ int main(int argc, const char **argv) {
 			frameCount = 0;
 			start = std::chrono::steady_clock::now();
 		}
-
 	}
 
-	// cleanup
-	ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
-
-	glfwDestroyWindow(window);
-	glfwTerminate();
 	return 0;
 }

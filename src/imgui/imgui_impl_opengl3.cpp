@@ -88,7 +88,7 @@ static void ImGui_ImplOpenGL3_SetupRenderState(ImDrawData* draw_data, int fb_wid
 // OpenGL3 Render function.
 // (this used to be set in io.RenderDrawListsFn and called by ImGui::Render(), but you can now call this directly from your main loop)
 // Note that this implementation is little overcomplicated because we are saving/setting up/restoring every OpenGL state explicitly, in order to be able to run within any OpenGL engine that doesn't do so.
-void ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
+void ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data, std::function<bool (char const *)> filter)
 {
     // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
     int fb_width = (int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
@@ -115,6 +115,10 @@ void ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
     for (int n = 0; n < draw_data->CmdListsCount; n++)
     {
         const ImDrawList* cmd_list = draw_data->CmdLists[n];
+
+		// check if window should rendered
+		if (!filter(cmd_list->_OwnerName))
+			continue;
 
         // Upload vertex/index buffers
         glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)cmd_list->VtxBuffer.Size * (int)sizeof(ImDrawVert), (const GLvoid*)cmd_list->VtxBuffer.Data, GL_STREAM_DRAW);
