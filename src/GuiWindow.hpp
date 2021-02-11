@@ -5,6 +5,10 @@
 #include <imgui.h>
 #include <functional>
 
+struct Size {
+	int width;
+	int height;
+};
 
 class GuiWindow {
 	static void keyCallback(GLFWwindow* w, int key, int scancode, int action, int modifiers);
@@ -13,8 +17,6 @@ class GuiWindow {
 	static void scrollCallback(GLFWwindow* w, double xoffset, double yoffset);
 
 public:
-
-	struct Size {int width; int height;};
 
 	/**
 	 * Constructor
@@ -105,9 +107,11 @@ protected:
 
 
 	struct State {
+		// size of window
+		Size windowSize;
+
 		// size of framebuffer in pixels (different from window size on high-dpi displays)
-		int framebufferWidth;
-		int framebufferHeight;
+		Size framebufferSize;
 
 		// modifiers, GLFW_MOD_SHIFT, GLFW_MOD_CONTROL, GLFW_MOD_ALT or GLFW_MOD_SUPER
 		int modifiers;

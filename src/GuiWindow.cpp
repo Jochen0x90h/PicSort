@@ -1,8 +1,6 @@
 #include "GuiWindow.hpp"
 #include "imgui/imgui_impl_opengl3.h"
 #include "imgui/Fonts.hpp"
-//#include <cstdio>
-//#include <cstdlib>
 #include <mutex>
 
 
@@ -87,11 +85,6 @@ GuiWindow::GuiWindow(int width, int height, char const *title, bool visible)
 {
 	std::lock_guard<std::mutex> lock(g_mutex);
 
-#ifdef __linux__
-	// assume high-dpi display until support is added to glfw
-	width *= 2;
-	height *= 2;
-#endif
 	// global init for GLFW
 	if (g_count == 0) {
 		if (!glfwInit())
@@ -120,6 +113,18 @@ GuiWindow::GuiWindow(int width, int height, char const *title, bool visible)
 
 		glfwSetErrorCallback(errorCallback);
 	}
+
+	// determine content scale (scale between window and framebuffer coordinates)
+	GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+	float xScale, yScale;
+	glfwGetMonitorContentScale(monitor, &xScale, &yScale);
+	this->scale = xScale;
+
+	// scale window size on linux, is done automatically on mac
+#ifdef __linux__
+	width = int(width * xScale);
+	height = int(height * yScale);
+#endif
 
 	// create GLFW window and OpenGL 3.3 Core context
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -150,24 +155,18 @@ GuiWindow::GuiWindow(int width, int height, char const *title, bool visible)
 
 	// v-sync
 	glfwSwapInterval(1);
-
+/*
 	// determine scale between window and framebuffer coordinates which is > 1 on high-dpi displays
-#ifdef __linux__
-	this->scale = 2;
-#else
-	{
-		// get window size in screen coordinates, scaled on high-dpi (retina) displays
-		int wWidth, wHeight;
-		glfwGetWindowSize(this->window, &wWidth, &wHeight);
+	// get window size in screen coordinates, scaled on high-dpi (retina) displays
+	int wWidth, wHeight;
+	glfwGetWindowSize(this->window, &wWidth, &wHeight);
 
-		// get frame buffer size in pixels, real resolution on high-dpi displays
-		int fbWidth, fbHeight;
-		glfwGetFramebufferSize(this->window, &fbWidth, &fbHeight);
+	// get frame buffer size in pixels, real resolution on high-dpi displays
+	int fbWidth, fbHeight;
+	glfwGetFramebufferSize(this->window, &fbWidth, &fbHeight);
 
-		this->scale = float(fbWidth) / wWidth;
-	}
-#endif
-
+	this->scale = xScale;//float(fbWidth) / wWidth * (linuxhdpi ? 2 : 1);
+*/
 	// global init for ImGui, requires OpenGL context
 	if (g_count == 0) {
 		// setup ImGui context
@@ -250,13 +249,11 @@ GuiWindow::~GuiWindow() {
 	}
 }
 
-GuiWindow::Size GuiWindow::getSize() {
+Size GuiWindow::getSize() {
 	int width, height;
 	glfwGetWindowSize(this->window, &width, &height);
-#ifdef __linux__
-	width /= 2;
-	height /= 2;
-#endif
+	width /= this->scale;
+	height /= this->scale;
 	return {width, height};
 }
 
@@ -280,10 +277,6 @@ void GuiWindow::draw() {
 	IM_ASSERT(io.Fonts->IsBuilt() && "Font atlas not built! It is generally built by the renderer back-end. Missing call to renderer _NewFrame() function? e.g. ImGui_ImplOpenGL3_NewFrame().");
 
 	// Setup display size (every frame to accommodate for window resizing)
-	int w, h;
-	int display_w, display_h;
-	glfwGetWindowSize(this->window, &w, &h);
-	glfwGetFramebufferSize(this->window, &display_w, &display_h);
 	io.DisplaySize = ImVec2(float(width), float(height));
 	if (width > 0 && height > 0) {
 		io.DisplayFramebufferScale = ImVec2(float(fbWidth) / width, float(fbHeight) / height);
@@ -336,15 +329,19 @@ void GuiWindow::draw() {
 			// Show OS mouse cursor
 			// FIXME-PLATFORM: Unfocused windows seems to fail changing the mouse cursor with GLFW 3.2, but 3.3 works here.
 			glfwSetCursor(this->window, g_MouseCursors[imgui_cursor] ? g_MouseCursors[imgui_cursor]
-				: g_MouseCursors[ImGuiMouseCursor_Arrow]);
+																	 : g_MouseCursors[ImGuiMouseCursor_Arrow]);
 			glfwSetInputMode(this->window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 		}
 	}
 
 	// draw
+	ImGui::NewFrame();
+
 	State state;
-	state.framebufferWidth = fbWidth;
-	state.framebufferHeight = fbHeight;
+	state.windowSize.width = width;
+	state.windowSize.height = height;
+	state.framebufferSize.width = fbWidth;
+	state.framebufferSize.height = fbHeight;
 	state.modifiers = 0;
 	if (io.KeyCtrl)
 		state.modifiers |= GLFW_MOD_CONTROL;
@@ -362,7 +359,6 @@ void GuiWindow::draw() {
 	state.scrollY = io.MouseWheel;
 	state.timeStep = io.DeltaTime;
 
-	ImGui::NewFrame();
 	this->rendered = false;
 	onDraw(state);
 	if (!this->rendered)

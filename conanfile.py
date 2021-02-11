@@ -16,13 +16,8 @@ def get_version():
     try:
         version = git.get_tag() # check if a tagged version
         if version is None:
-            if 'BRANCH_NAME' in os.environ:
-                # this is probably Jenkins
-                version = os.environ['BRANCH_NAME']
-            else:
-                # this is probably building manually
-                version = git.get_branch()
-        return version.replace("/", "-")
+            version = git.get_branch()
+        return version.replace("/", "-").replace(" ", "_").replace("(", "").replace(")", "")
     except:
         None
 
@@ -44,8 +39,8 @@ class Project(ConanFile):
     exports_sources = "conanfile.py", "CMakeLists.txt", "src/*", "test/*"
     requires = \
         "boost/1.75.0", \
-        "glfw/3.3.2", \
-        "imgui/1.79", \
+        "glfw/3.3.3", \
+        "imgui/1.81", \
         "libjpeg-turbo/2.0.5", \
         "tinyxml2/8.0.0"
         

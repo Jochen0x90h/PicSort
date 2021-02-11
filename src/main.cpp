@@ -5,6 +5,7 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <chrono>
 #include <boost/filesystem.hpp>
 #include <boost/range/iterator_range.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
@@ -256,17 +257,17 @@ public:
 		glBindVertexArray(0);
 	}
 
-	void set(int width, int height, ImageData image) {
+	void set(Size size, ImageData image) {
 		float mat[4][4] = {};
 		
 		float m00 = 1;
 		float m11 = 1;
 		if (image.orientation <= 4) {
 			// width and height are not exchanged
-			if (width * image.height > height * image.width) {
-				m00 = float(height * image.width) / float(width * image.height);
+			if (size.width * image.height > size.height * image.width) {
+				m00 = float(size.height * image.width) / float(size.width * image.height);
 			} else {
-				m11 = float(width * image.height) / float(height * image.width);
+				m11 = float(size.width * image.height) / float(size.height * image.width);
 			}
 	
 			//   1       2       3       4
@@ -295,10 +296,10 @@ public:
 
 		} else {
 			// width and height are exchanged
-			if (width * image.width > height * image.height) {
-				m00 = float(height * image.height) / float(width * image.width);
+			if (size.width * image.width > size.height * image.height) {
+				m00 = float(size.height * image.height) / float(size.width * image.width);
 			} else {
-				m11 = float(width * image.width) / float(height * image.height);
+				m11 = float(size.width * image.width) / float(size.height * image.height);
 			}
 
 			//     5           6           7           8
@@ -586,7 +587,7 @@ protected:
 		glClear(GL_COLOR_BUFFER_BIT);
 
 		// render image
-		this->image.set(state.framebufferWidth, state.framebufferHeight, picture->getImage());
+		this->image.set(state.framebufferSize, picture->getImage());
 		this->image.draw();
 
 		drawGui();
