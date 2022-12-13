@@ -16,25 +16,23 @@ VERSION := $(subst /,-,$(subst $(left),_,$(subst $(right),_,$(BRANCH))))
 REFERENCE := $(NAME)/$(VERSION)@
 
 # options
-export CXXFLAGS=-march=core-avx2
-OPTIONS :=
+export CONAN_RUN_TESTS=0
+export CONAN_INSTALL_PREFIX=${HOME}/.local
+OPTIONS := --build=missing
 
 
 # default target
 all: release debug
 
 # build release and run unit tests
-release: export CONAN_RUN_TESTS=1
 release:
 	conan create $(OPTIONS) . $(REFERENCE)
 
 # build debug and run unit tests
-debug: export CONAN_RUN_TESTS=1
 debug:
 	conan create --profile Debug $(OPTIONS) . $(REFERENCE)
 
-# install to ~/.local
-install: export CONAN_INSTALL_PREFIX=${HOME}/.local
+# install (e.g. to ~/.local)
 install:
 	conan install $(REFERENCE)
 

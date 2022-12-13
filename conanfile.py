@@ -1,16 +1,18 @@
 import os, shutil
-from conans import ConanFile, CMake
+from conans import ConanFile
+from conan.tools.cmake import CMakeToolchain, CMakeDeps, CMake
 
-# linux:
+# linux / windows (python via Microsoft Store):
 # install conan: pip3 install --user conan
 # upgrade conan: pip3 install --upgrade --user conan
 
-# macos:
+# macos (homebrew):
 # install conan: brew install conan
 
 # create default profile: conan profile new default --detect
 # create debug profile: copy ~/.conan/profiles/default to Debug, replace Release by Debug
 
+# helper function for deploy()
 def copy(src, dst):
     if os.path.islink(src):
         if os.path.lexists(dst):
@@ -26,18 +28,14 @@ class Project(ConanFile):
     url = "https://github.com/Jochen0x90h/PicSort"
     license = "MIT License"
     settings = "os", "compiler", "build_type", "arch"
-    options = {
-        "debug": [False, True]}
-    default_options = {
-        "debug": False}
-    generators = "cmake"
+    generators = "CMakeDeps"
     exports_sources = "conanfile.py", "CMakeLists.txt", "src/*", "test/*"
-    requires = \
-        "boost/1.76.0", \
-        "glfw/3.3.3", \
-        "imgui/1.83", \
-        "libjpeg-turbo/2.0.5", \
-        "tinyxml2/8.0.0"
+    requires = [
+        "boost/1.80.0",
+        "glfw/3.3.8",
+        "imgui/1.89.1",
+        "libjpeg-turbo/2.1.4",
+        "tinyxml2/9.0.0"]
 
 
     keep_imports = True
@@ -46,18 +44,28 @@ class Project(ConanFile):
         self.copy("*", src="@bindirs", dst="bin")
         self.copy("*", src="@libdirs", dst="lib")
 
-    def configure_cmake(self):
-        cmake = CMake(self, build_type = "RelWithDebInfo" if self.options.debug and self.settings.build_type == "Release" else None)
-        cmake.configure()
-        return cmake
+    def generate(self):
+        # generate "conan_toolchain.cmake"
+        toolchain = CMakeToolchain(self)
+
+        # bake CC and CXX from profile into toolchain
+        toolchain.blocks["generic_system"].values["compiler"] = self.env.get("CC", None)
+        toolchain.blocks["generic_system"].values["compiler_cpp"] = self.env.get("CXX", None)
+
+        toolchain.generate()
 
     def build(self):
-        cmake = self.configure_cmake()
+        cmake = CMake(self)
+        cmake.configure()
         cmake.build()
+
+        # run unit tests if CONAN_RUN_TESTS environment variable is set to 1
+        if os.getenv("CONAN_RUN_TESTS") == "1":
+            cmake.test()
 
     def package(self):
         # install from build directory into package directory
-        cmake = self.configure_cmake()
+        cmake = CMake(self)
         cmake.install()
 
         # also copy dependent libraries into the package
@@ -66,7 +74,7 @@ class Project(ConanFile):
         self.copy("*.so*", "lib", "lib", symlinks = True)
 
     def package_info(self):
-        self.cpp_info.name = self.name
+        pass
 
     def deploy(self):
         # install if CONAN_INSTALL_PREFIX env variable is set

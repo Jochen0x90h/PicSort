@@ -549,8 +549,9 @@ protected:
 
 					// subdirectories
 					for (int i = 0; i < this->targetList.size(); ++i) {
-						if (ImGui::Selectable(this->targetList[i].c_str(), false)) {
-							this->targetDir /= this->targetList[i];
+						auto &target = this->targetList[i];
+						if (ImGui::Selectable(target.string().c_str(), false)) {
+							this->targetDir /= target;
 							newTargetList = getList(this->targetDir);
 							selected = true;
 						}
@@ -586,10 +587,12 @@ protected:
 		glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 
-		// render image
+		// draw image
 		this->image.set(state.framebufferSize, picture->getImage());
 		this->image.draw();
 
+		// draw gui
+		ImGui::Render();
 		drawGui();
 	}
 

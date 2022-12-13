@@ -301,25 +301,26 @@ void GuiWindow::draw() {
 			buttons |= 1 << i;
 	}
 
-	// Update mouse position
-	const ImVec2 mouse_pos_backup = io.MousePos;
-	io.MousePos = ImVec2(std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::quiet_NaN());
-#ifdef __EMSCRIPTEN__
-	const bool focused = true; // Emscripten
-#else
+	// get focused state
 	const bool focused = glfwGetWindowAttrib(this->window, GLFW_FOCUSED) != 0;
-#endif
+
+	// update mouse position
 	if (focused) {
 		if (io.WantSetMousePos) {
-			glfwSetCursorPos(this->window, (double)mouse_pos_backup.x, (double)mouse_pos_backup.y);
+			// set mouse position
+			glfwSetCursorPos(this->window, (double)io.MousePos.x, (double)io.MousePos.y);
 		} else {
+			// get mouse position
 			double mouse_x, mouse_y;
 			glfwGetCursorPos(this->window, &mouse_x, &mouse_y);
 			io.MousePos = ImVec2((float)mouse_x, (float)mouse_y);
 		}
+	} else {
+		// not focused: set mouse position to nan
+		io.MousePos = ImVec2(std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::quiet_NaN());
 	}
 
-	// Update mouse cursor
+	// update mouse cursor
 	if (!(io.ConfigFlags & ImGuiConfigFlags_NoMouseCursorChange) && glfwGetInputMode(this->window, GLFW_CURSOR) != GLFW_CURSOR_DISABLED) {
 		ImGuiMouseCursor imgui_cursor = ImGui::GetMouseCursor();
 		if (imgui_cursor == ImGuiMouseCursor_None || io.MouseDrawCursor) {
@@ -359,30 +360,10 @@ void GuiWindow::draw() {
 	state.scrollY = io.MouseWheel;
 	state.timeStep = io.DeltaTime;
 
-	this->rendered = false;
 	onDraw(state);
-	if (!this->rendered)
-		ImGui::Render();
-	//ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 	// swap render buffer to screen
 	glfwSwapBuffers(window);
-}
-
-void GuiWindow::drawGui() {
-	if (!this->rendered) {
-		ImGui::Render();
-		this->rendered = true;
-	}
-	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData(), [](char const *){return true;});
-}
-
-void GuiWindow::drawGui(std::function<bool (char const *)> filter) {
-	if (!this->rendered) {
-		ImGui::Render();
-		this->rendered = true;
-	}
-	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData(), filter);
 }
 
 bool GuiWindow::onKey(int key, int scancode, int action, int mods, bool neededByGui) {
@@ -402,4 +383,12 @@ bool GuiWindow::onScroll(float dx, float dy) {
 }
 
 void GuiWindow::onDraw(State const &state) {
+}
+
+void GuiWindow::drawGui() {
+	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData(), [](char const *){return true;});
+}
+
+void GuiWindow::drawGui(std::function<bool (char const *)> filter) {
+	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData(), filter);
 }

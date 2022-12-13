@@ -1,6 +1,11 @@
 build*/
 cmake-build*/
 __pycache__*/
+CMakeUserPresets.json
+imgui.ini
+
+# VSCode
+.vscode/
 
 # CLion
 .idea/

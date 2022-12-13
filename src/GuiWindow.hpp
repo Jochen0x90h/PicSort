@@ -59,16 +59,6 @@ public:
 	 */
 	void draw();
 
-	/**
-	 * Draw the gui, do this inside onDraw() after all gui elements
-	 */
-	void drawGui();
-
-	/**
-	 * Selectively draw parts of the gui, do this inside onDraw() after all gui elements
-	 */
-	void drawGui(std::function<bool (char const *)> filter);
-
 protected:
 	/**
 	 * Called on key event
@@ -133,13 +123,20 @@ protected:
 	};
 
 	/**
-	 * Do the actual drawing here. Construct a gui between beginGui() and renderGui()
-	 * @param width width of framebuffer in pixels (different from window width on high-dpi displays)
-	 * @param height height of framebuffer in pixels (different from window height on high-dpi displays)
-	 * @param deltaTime time step in seconds since last onDraw()
+	 * Do the actual drawing here. Constuct a gui, call ImGui::Render() and then call drawGui() to actually draw it 
+	 * @param state state of window, framebuffer, keyboard modifiers and mouse
 	 */
 	virtual void onDraw(State const &state);
 
+	/**
+	 * Draw the gui, do this inside onDraw() after ImGui::Render()
+	 */
+	void drawGui();
+
+	/**
+	 * Selectively draw parts of the gui, do this inside onDraw() after ImGui::Render()
+	 */
+	void drawGui(std::function<bool (char const *)> filter);
 
 private:
 	GLFWwindow *window;
@@ -150,7 +147,4 @@ private:
 	// variables for ImGui
 	bool mouseJustPressed[ImGuiMouseButton_COUNT];
 	double time;
-
-	// set to true when ImGui::Render() was called to ensure it is called only once
-	bool rendered;
 };

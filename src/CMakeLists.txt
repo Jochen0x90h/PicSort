@@ -11,8 +11,14 @@ add_executable(${PROJECT_NAME}
 	TinyEXIF.cpp
 	TinyEXIF.h
 )
-conan_target_link_libraries(${PROJECT_NAME})
-
+target_link_libraries(${PROJECT_NAME}
+	Boost::headers
+	Boost::filesystem
+	glfw
+	imgui::imgui
+	libjpeg-turbo::libjpeg-turbo
+	tinyxml2::tinyxml2
+)
 
 # install
 install(TARGETS ${PROJECT_NAME}
