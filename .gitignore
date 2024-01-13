@@ -1,9 +1,14 @@
-build*/
-cmake-build*/
-__pycache__*/
+vcpkg/
+build/
+__pycache__/
+CMakeUserPresets.json
+
+# VSCode
+.vscode/
 
 # CLion
 .idea/
+cmake-build*/
 
 # QtCreator
 CMakeLists.txt.user

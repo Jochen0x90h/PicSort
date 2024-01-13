@@ -1,0 +1,8 @@
+{
+  "dependencies": [
+    "glfw3",
+    "imgui",
+    "libjpeg-turbo",
+    "tinyxml2"
+  ]
+}

@@ -1,11 +1,14 @@
 #include "GuiWindow.hpp"
 #include "imgui/imgui_impl_opengl3.h"
 #include "imgui/Fonts.hpp"
-#include <mutex>
+//#include <implot.h>
+#include <iostream>
+#include <limits>
+//#include <mutex>
 
 
 // global variables
-static std::mutex g_mutex;
+//static std::mutex g_mutex;
 static int g_count;
 static GLFWcursor* g_MouseCursors[ImGuiMouseCursor_COUNT] = {};
 
@@ -13,7 +16,8 @@ static GLFWcursor* g_MouseCursors[ImGuiMouseCursor_COUNT] = {};
 // static functions
 
 static void errorCallback(int error, const char* description) {
-	fprintf(stderr, "Error: %s\n", description);
+	//fprintf(stderr, "Error: %s\n", description);
+	std::cerr << "Error: " << description << std::endl;
 }
 
 static const char *getClipboardText(void *user_data) {
@@ -24,6 +28,7 @@ static void setClipboardText(void *user_data, const char* text) {
 	glfwSetClipboardString((GLFWwindow *)user_data, text);
 }
 
+// gets called by glfw
 void GuiWindow::keyCallback(GLFWwindow* w, int key, int scancode, int action, int modifiers) {
 	GuiWindow *window = (GuiWindow *)glfwGetWindowUserPointer(w);
 	ImGuiIO &io = ImGui::GetIO();
@@ -44,6 +49,7 @@ void GuiWindow::keyCallback(GLFWwindow* w, int key, int scancode, int action, in
 	}
 }
 
+// gets called by glfw
 void GuiWindow::charCallback(GLFWwindow* w, unsigned int c) {
 	GuiWindow *window = (GuiWindow *)glfwGetWindowUserPointer(w);
 
@@ -55,6 +61,7 @@ void GuiWindow::charCallback(GLFWwindow* w, unsigned int c) {
 	}
 }
 
+// gets called by glfw
 void GuiWindow::mouseCallback(GLFWwindow* w, int button, int action, int mods) {
 	GuiWindow *window = (GuiWindow *)glfwGetWindowUserPointer(w);
 
@@ -66,6 +73,7 @@ void GuiWindow::mouseCallback(GLFWwindow* w, int button, int action, int mods) {
 	}
 }
 
+// gets called by glfw
 void GuiWindow::scrollCallback(GLFWwindow* w, double xoffset, double yoffset) {
 	GuiWindow *window = (GuiWindow *)glfwGetWindowUserPointer(w);
 
@@ -83,7 +91,7 @@ void GuiWindow::scrollCallback(GLFWwindow* w, double xoffset, double yoffset) {
 GuiWindow::GuiWindow(int width, int height, char const *title, bool visible)
 	: mouseJustPressed{}
 {
-	std::lock_guard<std::mutex> lock(g_mutex);
+	//std::lock_guard<std::mutex> lock(g_mutex);
 
 	// global init for GLFW
 	if (g_count == 0) {
@@ -224,6 +232,8 @@ GuiWindow::GuiWindow(int width, int height, char const *title, bool visible)
 		io.SetClipboardTextFn = setClipboardText;
 		io.GetClipboardTextFn = getClipboardText;
 		io.ClipboardUserData = this->window;
+
+		//ImPlot::CreateContext();
 	}
 
 	this->time = glfwGetTime();
@@ -232,11 +242,12 @@ GuiWindow::GuiWindow(int width, int height, char const *title, bool visible)
 }
 
 GuiWindow::~GuiWindow() {
-	std::lock_guard<std::mutex> lock(g_mutex);
+	//std::lock_guard<std::mutex> lock(g_mutex);
 	--g_count;
 
 	// global terminate for ImGui, requires OpenGL contex
 	if (g_count == 0) {
+		//ImPlot::DestroyContext();
 		ImGui_ImplOpenGL3_Shutdown();
 		ImGui::DestroyContext();
 	}
@@ -249,11 +260,11 @@ GuiWindow::~GuiWindow() {
 	}
 }
 
-Size GuiWindow::getSize() {
+Size<int> GuiWindow::getSize() {
 	int width, height;
 	glfwGetWindowSize(this->window, &width, &height);
-	width /= this->scale;
-	height /= this->scale;
+	width = int(width / this->scale);
+	height = int(height / this->scale);
 	return {width, height};
 }
 
@@ -301,25 +312,26 @@ void GuiWindow::draw() {
 			buttons |= 1 << i;
 	}
 
-	// Update mouse position
-	const ImVec2 mouse_pos_backup = io.MousePos;
-	io.MousePos = ImVec2(std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::quiet_NaN());
-#ifdef __EMSCRIPTEN__
-	const bool focused = true; // Emscripten
-#else
+	// get focused state
 	const bool focused = glfwGetWindowAttrib(this->window, GLFW_FOCUSED) != 0;
-#endif
+
+	// update mouse position
 	if (focused) {
 		if (io.WantSetMousePos) {
-			glfwSetCursorPos(this->window, (double)mouse_pos_backup.x, (double)mouse_pos_backup.y);
+			// set mouse position
+			glfwSetCursorPos(this->window, (double)io.MousePos.x, (double)io.MousePos.y);
 		} else {
+			// get mouse position
 			double mouse_x, mouse_y;
 			glfwGetCursorPos(this->window, &mouse_x, &mouse_y);
 			io.MousePos = ImVec2((float)mouse_x, (float)mouse_y);
 		}
+	} else {
+		// not focused: set mouse position to nan
+		io.MousePos = ImVec2(std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::quiet_NaN());
 	}
 
-	// Update mouse cursor
+	// update mouse cursor
 	if (!(io.ConfigFlags & ImGuiConfigFlags_NoMouseCursorChange) && glfwGetInputMode(this->window, GLFW_CURSOR) != GLFW_CURSOR_DISABLED) {
 		ImGuiMouseCursor imgui_cursor = ImGui::GetMouseCursor();
 		if (imgui_cursor == ImGuiMouseCursor_None || io.MouseDrawCursor) {
@@ -340,8 +352,8 @@ void GuiWindow::draw() {
 	State state;
 	state.windowSize.width = width;
 	state.windowSize.height = height;
-	state.framebufferSize.width = fbWidth;
-	state.framebufferSize.height = fbHeight;
+	state.framebufferSize.width = float(fbWidth);
+	state.framebufferSize.height = float(fbHeight);
 	state.modifiers = 0;
 	if (io.KeyCtrl)
 		state.modifiers |= GLFW_MOD_CONTROL;
@@ -359,30 +371,10 @@ void GuiWindow::draw() {
 	state.scrollY = io.MouseWheel;
 	state.timeStep = io.DeltaTime;
 
-	this->rendered = false;
 	onDraw(state);
-	if (!this->rendered)
-		ImGui::Render();
-	//ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 	// swap render buffer to screen
 	glfwSwapBuffers(window);
-}
-
-void GuiWindow::drawGui() {
-	if (!this->rendered) {
-		ImGui::Render();
-		this->rendered = true;
-	}
-	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData(), [](char const *){return true;});
-}
-
-void GuiWindow::drawGui(std::function<bool (char const *)> filter) {
-	if (!this->rendered) {
-		ImGui::Render();
-		this->rendered = true;
-	}
-	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData(), filter);
 }
 
 bool GuiWindow::onKey(int key, int scancode, int action, int mods, bool neededByGui) {
@@ -402,4 +394,12 @@ bool GuiWindow::onScroll(float dx, float dy) {
 }
 
 void GuiWindow::onDraw(State const &state) {
+}
+
+void GuiWindow::drawGui() {
+	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData(), [](char const *){return true;});
+}
+
+void GuiWindow::drawGui(std::function<bool (char const *)> filter) {
+	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData(), filter);
 }

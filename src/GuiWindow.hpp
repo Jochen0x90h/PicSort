@@ -4,10 +4,13 @@
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 #include <functional>
+#include <string>
 
+
+template <typename T>
 struct Size {
-	int width;
-	int height;
+	T width;
+	T height;
 };
 
 class GuiWindow {
@@ -52,22 +55,15 @@ public:
 	 * Get window size
 	 * @return
 	 */
-	Size getSize();
+	Size<int> getSize();
 
 	/**
 	 * Call this from the main loop, sets up the context and swaps buffers at the end
 	 */
 	void draw();
 
-	/**
-	 * Draw the gui, do this inside onDraw() after all gui elements
-	 */
-	void drawGui();
-
-	/**
-	 * Selectively draw parts of the gui, do this inside onDraw() after all gui elements
-	 */
-	void drawGui(std::function<bool (char const *)> filter);
+	void setTitle(const char *title) {glfwSetWindowTitle(this->window, title);}
+	void setTitle(const std::string &title) {glfwSetWindowTitle(this->window, title.c_str());}
 
 protected:
 	/**
@@ -108,10 +104,10 @@ protected:
 
 	struct State {
 		// size of window
-		Size windowSize;
+		Size<int> windowSize;
 
 		// size of framebuffer in pixels (different from window size on high-dpi displays)
-		Size framebufferSize;
+		Size<float> framebufferSize;
 
 		// modifiers, GLFW_MOD_SHIFT, GLFW_MOD_CONTROL, GLFW_MOD_ALT or GLFW_MOD_SUPER
 		int modifiers;
@@ -133,13 +129,20 @@ protected:
 	};
 
 	/**
-	 * Do the actual drawing here. Construct a gui between beginGui() and renderGui()
-	 * @param width width of framebuffer in pixels (different from window width on high-dpi displays)
-	 * @param height height of framebuffer in pixels (different from window height on high-dpi displays)
-	 * @param deltaTime time step in seconds since last onDraw()
+	 * Do the actual drawing here. Constuct a gui, call ImGui::Render() and then call drawGui() to actually draw it
+	 * @param state state of window, framebuffer, keyboard modifiers and mouse
 	 */
 	virtual void onDraw(State const &state);
 
+	/**
+	 * Draw the gui, do this inside onDraw() after ImGui::Render()
+	 */
+	void drawGui();
+
+	/**
+	 * Selectively draw parts of the gui, do this inside onDraw() after ImGui::Render()
+	 */
+	void drawGui(std::function<bool (char const *)> filter);
 
 private:
 	GLFWwindow *window;
@@ -150,7 +153,4 @@ private:
 	// variables for ImGui
 	bool mouseJustPressed[ImGuiMouseButton_COUNT];
 	double time;
-
-	// set to true when ImGui::Render() was called to ensure it is called only once
-	bool rendered;
 };

@@ -1,21 +1,19 @@
+#include "GuiWindow.hpp"
 #include "glad/glad.h"
+#include "TinyEXIF.h" // https://github.com/cdcseacave/TinyEXIF
 #include <GLFW/glfw3.h>
-#include <errno.h>
+#include <imgui.h>
 #include <turbojpeg.h>
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <chrono>
-#include <boost/filesystem.hpp>
-#include <boost/range/iterator_range.hpp>
-#include <boost/date_time/posix_time/posix_time.hpp>
-#include <boost/date_time/posix_time/conversion.hpp>
-#include "TinyEXIF.h" // https://github.com/cdcseacave/TinyEXIF
-#include <imgui.h>
-#include "GuiWindow.hpp"
+#include <filesystem>
+#include <ranges>
+#include <errno.h>
 
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 
 
 struct ImageData {
@@ -43,13 +41,16 @@ class Picture {
 public:
 
 	Picture(fs::path path) {
-		// get file data
-		std::time_t date = fs::last_write_time(path);
-		this->date = boost::posix_time::to_iso_extended_string(boost::posix_time::from_time_t(date));
-		
+		// file name
+		this->name = path.stem().string();
+
+		// get file date
+		auto date = fs::last_write_time(path);
+		this->date = std::format("{0:%F} {0:%R}", date);
+
 		// determine jpeg size
 		std::ifstream file(path.string(), std::ios::binary | std::ios::ate);
-		int jpegSize = file.tellg();
+		int jpegSize = int(file.tellg());
 		file.seekg(0);
 
 		// allocate jpeg buffer
@@ -64,18 +65,18 @@ public:
 		file.close();
 
 		// read exif
-		TinyEXIF::EXIFInfo imageEXIF(jpegBuf, jpegSize);
-		if (imageEXIF.Fields) {
-			this->orientation = imageEXIF.Orientation;
+		TinyEXIF::EXIFInfo exif(jpegBuf, jpegSize);
+		if (exif.Fields) {
+			this->orientation = exif.Orientation;
 		}
 
 		// init decompressor
-		tjhandle tjInstance = NULL;
+		tjhandle tjInstance = NULL;int selectedTarget = -1;
 		if ((tjInstance = tjInitDecompress()) == NULL) {
 			setError("initializing decompressor", tjInstance);
 			return;
 		}
-		
+
 		// decompress header
 		int inSubsamp, inColorspace;
 		if (tjDecompressHeader3(tjInstance, jpegBuf, jpegSize, &this->width, &this->height, &inSubsamp, &inColorspace) < 0) {
@@ -97,21 +98,21 @@ public:
 		{
 			setError("decompressing JPEG image", tjInstance);
 		}
-		
+
 		// free
 		tjFree(jpegBuf);
 		tjDestroy(tjInstance);
 	}
-	
+
 	~Picture() {
 		tjFree(this->imgBuf);
 	}
-	
+
 	void setError(char const *action) {
 		this->action = action;
 		this->error = strerror(errno);
 	}
-	
+
 	void setError(char const *action, tjhandle tjInstance) {
 		this->action = action;
 		this->error = tjGetErrorStr2(tjInstance);
@@ -120,6 +121,7 @@ public:
 	// get image data
 	ImageData getImage() {return {this->width, this->height, this->orientation, this->imgBuf};}
 
+	std::string name;
 	std::string date;
 	int width, height;
 
@@ -231,8 +233,8 @@ public:
 		glBindTexture(GL_TEXTURE_2D, 0);
 
 		// create vertex buffers
-		this->vertexCount = std::size(vertices);
-		this->indexCount = std::size(indices);
+		this->vertexCount = int(std::size(vertices));
+		this->indexCount = int(std::size(indices));
 		glGenBuffers(1, &this->vertexBuffer);
 		glGenBuffers(1, &this->texcoordBuffer);
 		glGenBuffers(1, &this->indexBuffer);
@@ -257,9 +259,9 @@ public:
 		glBindVertexArray(0);
 	}
 
-	void set(Size size, ImageData image) {
+	void set(Size<float> size, ImageData image) {
 		float mat[4][4] = {};
-		
+
 		float m00 = 1;
 		float m11 = 1;
 		if (image.orientation <= 4) {
@@ -269,7 +271,7 @@ public:
 			} else {
 				m11 = float(size.width * image.height) / float(size.height * image.width);
 			}
-	
+
 			//   1       2       3       4
 			// 888888  888888      88  88
 			// 88          88      88  88
@@ -425,10 +427,11 @@ uint32_t const Image::indices[6] = {
 // get sorted file list
 std::vector<fs::path> getList(fs::path const &dir) {
 	std::vector<fs::path> list;
-	for (auto &entry : boost::make_iterator_range(fs::directory_iterator(dir), {})) {
+	//for (auto &entry : boost::make_iterator_range(fs::directory_iterator(dir), {})) {
+	for (auto &entry : std::ranges::subrange(fs::directory_iterator(dir), {})) {
 		fs::path const &path = entry.path();
 
-		boost::system::error_code ec;
+		std::error_code ec;
 		if (fs::is_directory(path, ec))
 			list.push_back(path.filename());
 	}
@@ -452,7 +455,7 @@ public:
 		std::vector<fs::path> targetList = getList(this->targetDir);
 
 		// read current directory to get list of imge files
-		for (auto &entry : boost::make_iterator_range(fs::directory_iterator(fs::path(dir)), {})) {
+		for (auto &entry : std::ranges::subrange(fs::directory_iterator(fs::path(dir)), {})) {
 			fs::path const &path = entry.path();
 
 			// collect images
@@ -528,6 +531,7 @@ protected:
 				if (ImGui::InputText("New Directory", this->newDirectoryBuffer, std::size(this->newDirectoryBuffer),
 					ImGuiInputTextFlags_EnterReturnsTrue))
 				{
+					// create and enter new subdirectory
 					fs::path newDirectory = this->newDirectoryBuffer;
 					fs::create_directory(this->targetDir / newDirectory);
 					this->newDirectoryBuffer[0] = 0;
@@ -537,29 +541,53 @@ protected:
 
 				// list box containing subdirectories
 				std::vector<fs::path> newTargetList;
-				bool selected = false;
+				bool applyTargetList = false;
+				int selectedTarget = -1;
 				ImGui::PushItemWidth(-1);
-				if (ImGui::ListBoxHeader("", this->targetList.size(), 10)) {
+				if (ImGui::BeginListBox("##list", ImVec2(-FLT_MIN, -FLT_MIN))) {
 					// parent directory
 					if (ImGui::Selectable("..", false)) {
+						fs::path currentDirectory = this->targetDir.filename();
+
+						// exit to parent directory
 						this->targetDir = this->targetDir.parent_path();
 						newTargetList = getList(this->targetDir);
-						selected = true;
+						applyTargetList = true;
+
+						// get index of the directory that we just exited
+						for (int i = 0; i < newTargetList.size(); ++i) {
+							auto const target = newTargetList[i];
+							if (target == currentDirectory) {
+								selectedTarget = i;
+								break;
+							}
+						}
 					}
 
 					// subdirectories
 					for (int i = 0; i < this->targetList.size(); ++i) {
-						if (ImGui::Selectable(this->targetList[i].c_str(), false)) {
+						std::string path = this->targetList[i].string();
+						if (ImGui::Selectable(path.c_str(), false)) {
+							// enter subdirectory
 							this->targetDir /= this->targetList[i];
 							newTargetList = getList(this->targetDir);
-							selected = true;
+							applyTargetList = true;
+						}
+
+						// check if we exited a directory and we have to scroll to its location
+						if (i == this->selectedTarget) {
+							ImGui::SetScrollHereY();
+							this->selectedTarget = -1;
 						}
 					}
-					ImGui::ListBoxFooter();
+					ImGui::EndListBox();
 				}
 				ImGui::PopItemWidth();
-				if (selected)
+
+				// apply new list of directories in target directory when a directory was selected by the user
+				if (applyTargetList)
 					this->targetList.swap(newTargetList);
+				this->selectedTarget = selectedTarget;
 			}
 			ImGui::End();
 		}
@@ -567,6 +595,7 @@ protected:
 		// image info
 		{
 			std::string info = this->picture->date.substr(0, 10) + "###info";
+			//std::string info = this->picture->name + "###info";
 			if (ImGui::Begin(info.c_str(), nullptr, 0)) {
 				// ISO date
 				ImGui::LabelText("Date", "%s", this->picture->date.c_str());
@@ -581,6 +610,8 @@ protected:
 			}
 			ImGui::End();
 		}
+
+		ImGui::Render();
 
 		// clear screen
 		glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
@@ -602,6 +633,7 @@ protected:
 	// target directory and list of directories in target directory
 	fs::path targetDir;
 	std::vector<fs::path> targetList;
+	int selectedTarget = -1;
 
 
 	// class for rendering a picture onto the screen
@@ -631,7 +663,7 @@ int main(int argc, const char **argv) {
 			count = 5;
 		}
 		//glfwWaitEventsTimeout(0.03);
-		
+
 		// exit if all files sorted
 		if (window.empty())
 			break;

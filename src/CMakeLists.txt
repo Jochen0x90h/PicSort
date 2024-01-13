@@ -11,12 +11,16 @@ add_executable(${PROJECT_NAME}
 	TinyEXIF.cpp
 	TinyEXIF.h
 )
-conan_target_link_libraries(${PROJECT_NAME})
+target_link_libraries(${PROJECT_NAME}
+	PRIVATE
+		glfw
+		imgui::imgui
+		JPEG::JPEG
+		libjpeg-turbo::turbojpeg
+		#libjpeg-turbo::turbojpeg-static
+		tinyxml2::tinyxml2
+)
 
 
 # install
-install(TARGETS ${PROJECT_NAME}
-	LIBRARY DESTINATION lib
-	ARCHIVE DESTINATION lib
-	RUNTIME DESTINATION bin
-)
+install(TARGETS ${PROJECT_NAME})
