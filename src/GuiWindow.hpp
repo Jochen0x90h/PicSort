@@ -65,6 +65,8 @@ public:
 	void setTitle(const char *title) {glfwSetWindowTitle(this->window, title);}
 	void setTitle(const std::string &title) {glfwSetWindowTitle(this->window, title.c_str());}
 
+	void setClipboard(const std::string &str) {glfwSetClipboardString(this->window, str.c_str());}
+
 protected:
 	/**
 	 * Called on key event

@@ -40,13 +40,17 @@ const char *colorspaceName[TJ_NUMCS] = {
 class Picture {
 public:
 
-	Picture(fs::path path) {
+	Picture(fs::path path, GuiWindow &window) {
 		// file name
 		this->name = path.stem().string();
 
 		// get file date
-		auto date = fs::last_write_time(path);
-		this->date = std::format("{0:%F} {0:%R}", date);
+		// https://omegaup.com/docs/cpp/en/cpp/chrono/format.html
+		// %F = %Y-%m-%d
+		// %R = %H:%M
+		// %T = %H:%M:%S
+		this->time = fs::last_write_time(path);
+		this->date = std::format("{0:%F} {0:%R}", this->time);
 
 		// determine jpeg size
 		std::ifstream file(path.string(), std::ios::binary | std::ios::ate);
@@ -66,9 +70,28 @@ public:
 
 		// read exif
 		TinyEXIF::EXIFInfo exif(jpegBuf, jpegSize);
+		std::stringstream geo;
 		if (exif.Fields) {
+			// get image orientation
 			this->orientation = exif.Orientation;
+
+			// get date
+			if (!exif.DateTime.empty()) {
+				auto in = std::istringstream(exif.DateTime);
+				std::chrono::time_point<std::chrono::file_clock> time;
+				in >> std::chrono::parse("%Y:%m:%d %H:%M:%S", time);
+				if (time.time_since_epoch().count() != 0) {
+					this->time = time;
+					this->date = std::format("{0:%F} {0:%R}", time);
+				}
+			}
+
+			// copy GPS coordinates into clipboard
+			if (exif.GeoLocation.hasLatLon()) {
+				geo << exif.GeoLocation.Latitude << ", " << exif.GeoLocation.Longitude;
+			}
 		}
+		window.setClipboard(geo.str());
 
 		// init decompressor
 		tjhandle tjInstance = NULL;int selectedTarget = -1;
@@ -122,6 +145,7 @@ public:
 	ImageData getImage() {return {this->width, this->height, this->orientation, this->imgBuf};}
 
 	std::string name;
+	std::chrono::time_point<std::chrono::file_clock> time;
 	std::string date;
 	int width, height;
 
@@ -471,7 +495,7 @@ public:
 
 		// create picture from first file in list
 		if (!this->files.empty())
-			this->picture = new Picture(dir / this->files[0]);
+			this->picture = new Picture(dir / this->files[0], *this);
 
 
 		// init temp variables
@@ -499,8 +523,9 @@ protected:
 				else
 					this->fileIndex = (this->fileIndex + 1) % count;
 
+				// show new picture
 				delete this->picture;
-				this->picture = new Picture(this->files[this->fileIndex]);
+				this->picture = new Picture(this->files[this->fileIndex], *this);
 			}
 
 			// shift-space: move image
@@ -509,12 +534,17 @@ protected:
 				fs::path dst = this->targetDir / src.filename();
 				fs::rename(src, dst);
 
+				// set date
+				fs::last_write_time(dst, this->picture->time);
+
+				// erase from list
 				this->files.erase(this->files.begin() + this->fileIndex);
 				this->fileIndex = std::min(this->fileIndex, int(this->files.size()) - 1);
 
+				// show next picture
 				delete this->picture;
 				if (!this->files.empty())
-					this->picture = new Picture(this->files[this->fileIndex]);
+					this->picture = new Picture(this->files[this->fileIndex], *this);
 				else
 					this->picture = nullptr;
 			}
