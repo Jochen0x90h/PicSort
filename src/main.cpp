@@ -42,7 +42,7 @@ public:
 
 	Picture(fs::path path, GuiWindow &window) {
 		// file name
-		this->name = path.stem().string();
+		//this->name = path.stem().u8string();
 
 		// get file date
 		// https://omegaup.com/docs/cpp/en/cpp/chrono/format.html
@@ -53,7 +53,7 @@ public:
 		this->date = std::format("{0:%F} {0:%R}", this->time);
 
 		// determine jpeg size
-		std::ifstream file(path.string(), std::ios::binary | std::ios::ate);
+		std::ifstream file(path, std::ios::binary | std::ios::ate);
 		int jpegSize = int(file.tellg());
 		file.seekg(0);
 
@@ -144,7 +144,7 @@ public:
 	// get image data
 	ImageData getImage() {return {this->width, this->height, this->orientation, this->imgBuf};}
 
-	std::string name;
+	//std::u8string name;
 	std::chrono::time_point<std::chrono::file_clock> time;
 	std::string date;
 	int width, height;
@@ -555,10 +555,10 @@ protected:
 	void onDraw(State const &state) override {
 		// target directory selector
 		{
-			std::string target = this->targetDir.filename().string() + "###target";
-			if (ImGui::Begin(target.c_str(), nullptr, 0)) {
+			std::u8string target = this->targetDir.filename().u8string() + u8"###target";
+			if (ImGui::Begin((char *)target.c_str(), nullptr, 0)) {
 				// input for new directory
-				if (ImGui::InputText("New Directory", this->newDirectoryBuffer, std::size(this->newDirectoryBuffer),
+				if (ImGui::InputText("New Directory", (char *)this->newDirectoryBuffer, std::size(this->newDirectoryBuffer),
 					ImGuiInputTextFlags_EnterReturnsTrue))
 				{
 					// create and enter new subdirectory
@@ -596,8 +596,8 @@ protected:
 
 					// subdirectories
 					for (int i = 0; i < this->targetList.size(); ++i) {
-						std::string path = this->targetList[i].string();
-						if (ImGui::Selectable(path.c_str(), false)) {
+						std::u8string path = this->targetList[i].u8string();
+						if (ImGui::Selectable((char *)path.c_str(), false)) {
 							// enter subdirectory
 							this->targetDir /= this->targetList[i];
 							newTargetList = getList(this->targetDir);
@@ -669,7 +669,7 @@ protected:
 	// class for rendering a picture onto the screen
 	Image image;
 
-	char newDirectoryBuffer[64];
+	char8_t newDirectoryBuffer[64];
 };
 
 
