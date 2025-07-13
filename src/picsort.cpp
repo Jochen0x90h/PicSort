@@ -547,19 +547,18 @@ public:
     bool empty() {return this->files.empty();}
 
 protected:
-    bool onKey(int key, int scancode, int action, int modifiers, bool neededByGui) override {
+    bool onKey(ImGuiKey key, int scancode, int action, int modifiers, bool neededByGui) override {
         if (action == GLFW_PRESS) {
             // esc: exit
-            if (key == GLFW_KEY_ESCAPE)
+            if (key == ImGuiKey::ImGuiKey_Escape)
                 close();
 
             // up/down: select next/pevious image
-            if (key == GLFW_KEY_UP || key == GLFW_KEY_DOWN) {
+            bool next = key == ImGuiKey::ImGuiKey_DownArrow || key == ImGuiKey::ImGuiKey_RightArrow;
+            bool prev = key == ImGuiKey::ImGuiKey_UpArrow || key == ImGuiKey::ImGuiKey_LeftArrow;
+            if (next || prev) {
                 int count = int(this->files.size());
-                if (key == GLFW_KEY_UP)
-                    this->fileIndex = (this->fileIndex + count - 1) % count;
-                else
-                    this->fileIndex = (this->fileIndex + 1) % count;
+                this->fileIndex = (this->fileIndex + (next ? 1 : count - 1)) % count;
 
                 // show new picture
                 delete this->picture;
@@ -571,7 +570,7 @@ protected:
             }
 
             // shift-space: move image
-            if (key == GLFW_KEY_SPACE && (modifiers & GLFW_MOD_SHIFT) != 0) {
+            if (key == ImGuiKey::ImGuiKey_Space && (modifiers & GLFW_MOD_SHIFT) != 0) {
                 fs::path src = this->files[this->fileIndex];
                 fs::path dst = this->targetDir / src.filename();
                 fs::rename(src, dst);

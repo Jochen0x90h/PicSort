@@ -17,8 +17,8 @@ target_link_libraries(picsort
 		glfw
 		imgui::imgui
 		JPEG::JPEG
-		libjpeg-turbo::turbojpeg
-		#libjpeg-turbo::turbojpeg-static
+		#libjpeg-turbo::turbojpeg
+		libjpeg-turbo::turbojpeg-static
 		tinyxml2::tinyxml2
 )
 
