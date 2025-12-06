@@ -14,9 +14,10 @@ class Project(ConanFile):
     exports_sources = "conanfile.py", "CMakeLists.txt", "src/*", "test/*"
     requires = [
         "glfw/3.4",
-        "imgui/1.92.0",
+        "imgui/1.92.2b",
         "libjpeg-turbo/3.1.1",
-        "tinyxml2/11.0.0"
+        "tinyxml2/11.0.0",
+        "ffmpeg/8.0.1"
     ]
 
 

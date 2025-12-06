@@ -1,9 +1,9 @@
+#include "dst.hpp"
 #include "GuiWindow.hpp"
+#include "Picture.hpp"
 #include "glad/glad.h"
-#include "TinyEXIF.h" // https://github.com/cdcseacave/TinyEXIF
 #include <GLFW/glfw3.h>
 #include <imgui.h>
-#include <turbojpeg.h>
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -14,7 +14,9 @@
 
 
 namespace fs = std::filesystem;
+using namespace std::chrono_literals;
 
+/*
 // https://forum.arduino.cc/t/rtc-mit-sommerzeit/168068
 bool summertime_EU(int year, int month, int day, int hour, int tzHours)
 // European Daylight Savings Time calculation by "jurs" for German Arduino Forum
@@ -29,17 +31,31 @@ bool summertime_EU(int year, int month, int day, int hour, int tzHours)
         return false;
 }
 
-
-struct ImageData {
-    // image size
-    int width, height;
-
-    // image orientation, see http://jpegclub.org/exif_orientation.html
-    int orientation;
-
-    // image data
-    unsigned char *data;
+/// @brief Calculate if US daylight saving time is in effect.
+/// @param day Day of month (1..31)
+/// @param month Month (1..12)
+/// @param dow Day of week (1 = monday .. 7 = sunday)
+/// @return true if daylight saving time is in effect
+bool summertime_US(int day, int month, int dow) {
+    //January, february, and december are out.
+    if (month < 3 || month > 11) { return false; }
+    //April to October are in
+    if (month > 3 && month < 11) { return true; }
+    int previousSunday = day - dow;
+    //In march, we are DST if our previous sunday was on or after the 8th.
+    if (month == 3) { return previousSunday >= 8; }
+    //In november we must be before the first sunday to be dst.
+    //That means the previous sunday must be before the 1st.
+    return previousSunday <= 0;
+}
+/// @brief Daylight saving time type
+///
+enum class DstType {
+    NONE,
+    EU,
+    US
 };
+*/
 
 /*
 const char *subsampName[TJ_NUMSAMP] = {
@@ -50,145 +66,6 @@ const char *colorspaceName[TJ_NUMCS] = {
     "RGB", "YCbCr", "GRAY", "CMYK", "YCCK"
 };
 */
-
-class Picture {
-public:
-
-    Picture(fs::path path, GuiWindow &window) {
-        // file name
-        //this->name = path.stem().u8string();
-
-        // get file date (gets overwritten if exif date is present)
-        // https://omegaup.com/docs/cpp/en/cpp/chrono/format.html
-        // %F = %Y-%m-%d
-        // %R = %H:%M
-        // %T = %H:%M:%S
-        this->time = fs::last_write_time(path);
-        this->date = std::format("{0:%F} {0:%R}", this->time);
-
-        // determine jpeg size
-        std::ifstream file(path, std::ios::binary | std::ios::ate);
-        int jpegSize = int(file.tellg());
-        file.seekg(0);
-
-        // allocate jpeg buffer
-        unsigned char *jpegBuf = NULL;
-        if ((jpegBuf = (unsigned char *)tjAlloc(jpegSize)) == NULL) {
-            setError("allocating JPEG buffer");
-            return;
-        }
-
-        // read jpeg into buffer
-        file.read(reinterpret_cast<char *>(jpegBuf), jpegSize);
-        file.close();
-
-        // read exif
-        TinyEXIF::EXIFInfo exif(jpegBuf, jpegSize);
-        std::stringstream geo;
-        if (exif.Fields) {
-            // get image orientation
-            this->orientation = exif.Orientation;
-
-            // get date
-            if (!exif.DateTime.empty()) {
-                auto in = std::istringstream(exif.DateTime);
-                std::chrono::time_point<std::chrono::file_clock> time;
-                in >> std::chrono::parse("%Y:%m:%d %H:%M:%S", time);
-                if (time.time_since_epoch().count() != 0) {
-                    using namespace std::chrono_literals;
-
-                    this->date = std::format("{0:%F} {0:%R}", time);
-
-                    // calc UTC time from exif time for Berlin
-                    time -= 1h; // convert from MEZ to UTC assuming winter time
-                    auto systemTime = std::chrono::clock_cast<std::chrono::system_clock>(time);
-                    auto tt = std::chrono::system_clock::to_time_t(systemTime);
-                    tm t = *gmtime(&tt); // UTC
-                    //tm t = *localtime(&tt);
-                    if (summertime_EU(1900 + t.tm_year, t.tm_mon + 1, t.tm_mday, t.tm_hour, 0)) {
-                        // summer time
-                        this->time = time - 1h;
-                        this->date += 'S';
-                    } else {
-                        this->time = time;
-                        this->date += 'W';
-                    }
-                }
-            }
-
-            // copy GPS coordinates into clipboard
-            if (exif.GeoLocation.hasLatLon()) {
-                geo << exif.GeoLocation.Latitude << ", " << exif.GeoLocation.Longitude;
-            }
-        }
-        window.setClipboard(geo.str());
-
-        // init decompressor
-        tjhandle tjInstance = NULL;int selectedTarget = -1;
-        if ((tjInstance = tjInitDecompress()) == NULL) {
-            setError("initializing decompressor", tjInstance);
-            return;
-        }
-
-        // decompress header
-        int inSubsamp, inColorspace;
-        if (tjDecompressHeader3(tjInstance, jpegBuf, jpegSize, &this->width, &this->height, &inSubsamp, &inColorspace) < 0) {
-            setError("reading JPEG header", tjInstance);
-            return;
-        }
-
-        // allocate image
-        int pixelFormat = TJPF_RGB;
-        if ((this->imgBuf = (unsigned char *)tjAlloc(width * height * tjPixelSize[pixelFormat])) == NULL) {
-            setError("allocating uncompressed image buffer");
-            return;
-        }
-
-        // decompress image
-        int flags = TJFLAG_FASTDCT | TJFLAG_FASTUPSAMPLE;
-        if (tjDecompress2(tjInstance, jpegBuf, jpegSize, this->imgBuf, this->width, 0, this->height,
-            pixelFormat, flags) < 0)
-        {
-            setError("decompressing JPEG image", tjInstance);
-        }
-
-        // free
-        tjFree(jpegBuf);
-        tjDestroy(tjInstance);
-
-
-        // pre-set input field for new directory with date of picture
-        //strcpy((char *)window.newDirectoryBuffer, this->date.c_str());
-    }
-
-    ~Picture() {
-        tjFree(this->imgBuf);
-    }
-
-    void setError(char const *action) {
-        this->action = action;
-        this->error = strerror(errno);
-    }
-
-    void setError(char const *action, tjhandle tjInstance) {
-        this->action = action;
-        this->error = tjGetErrorStr2(tjInstance);
-    }
-
-    // get image data
-    ImageData getImage() {return {this->width, this->height, this->orientation, this->imgBuf};}
-
-    //std::u8string name;
-    std::chrono::time_point<std::chrono::file_clock> time;
-    std::string date;
-    int width, height;
-
-protected:
-    char const *action;
-    char const *error;
-    int orientation = 0;
-    unsigned char *imgBuf = NULL;
-};
 
 
 namespace shader {
@@ -270,20 +147,20 @@ public:
     Image() {
         // create shader
         std::string shaderName = "Map";
-        this->shader = shader::create(shaderName, vertexShaderCode, fragmentShaderCode);
-        this->matUniform = shader::getUniform(shaderName, shader, "mat");
-        this->mapUniform = shader::getUniform(shaderName, this->shader, "map");
-        this->vertexInput = shader::getVertexInput(shaderName, this->shader, "vertex");
-        this->texcoordInput = shader::getVertexInput(shaderName, this->shader, "texcoord");
+        shader_ = shader::create(shaderName, vertexShaderCode_, fragmentShaderCode_);
+        matUniform_ = shader::getUniform(shaderName, shader_, "mat");
+        mapUniform_ = shader::getUniform(shaderName, shader_, "map");
+        vertexInput_ = shader::getVertexInput(shaderName, shader_, "vertex");
+        texcoordInput_ = shader::getVertexInput(shaderName, shader_, "texcoord");
 
         // set texture index, not necessary because 0 is default
-        //glUseProgram(this->shader);
-        //glUniform1i(this->mapUniform, 0);
+        //glUseProgram(shader_);
+        //glUniform1i(mapUniform_, 0);
         //glUseProgram(0);
 
         // load texture
-        glGenTextures(1, &this->texture);
-        glBindTexture(GL_TEXTURE_2D, this->texture);
+        glGenTextures(1, &texture_);
+        glBindTexture(GL_TEXTURE_2D, texture_);
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -291,28 +168,28 @@ public:
         glBindTexture(GL_TEXTURE_2D, 0);
 
         // create vertex buffers
-        this->vertexCount = int(std::size(vertices));
-        this->indexCount = int(std::size(indices));
-        glGenBuffers(1, &this->vertexBuffer);
-        glGenBuffers(1, &this->texcoordBuffer);
-        glGenBuffers(1, &this->indexBuffer);
+        vertexCount_ = int(std::size(vertices_));
+        indexCount_ = int(std::size(indices_));
+        glGenBuffers(1, &vertexBuffer_);
+        glGenBuffers(1, &texcoordBuffer_);
+        glGenBuffers(1, &indexBuffer_);
 
         // create vertex array object
-        glGenVertexArrays(1, &this->vao);
-        glBindVertexArray(this->vao);
+        glGenVertexArrays(1, &vao_);
+        glBindVertexArray(vao_);
 
-        glBindBuffer(GL_ARRAY_BUFFER, this->vertexBuffer);
-        glBufferData(GL_ARRAY_BUFFER, this->vertexCount * sizeof(Vertex), this->vertices, GL_STATIC_DRAW);
-        glEnableVertexAttribArray(this->vertexInput);
-        glVertexAttribPointer(this->vertexInput, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), nullptr);
+        glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer_);
+        glBufferData(GL_ARRAY_BUFFER, vertexCount_ * sizeof(Vertex), vertices_, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(vertexInput_);
+        glVertexAttribPointer(vertexInput_, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), nullptr);
 
-        glBindBuffer(GL_ARRAY_BUFFER, this->texcoordBuffer);
-        glBufferData(GL_ARRAY_BUFFER, this->vertexCount * sizeof(Texcoord), this->texcoords, GL_STATIC_DRAW);
-        glEnableVertexAttribArray(this->texcoordInput);
-        glVertexAttribPointer(this->texcoordInput, 2, GL_FLOAT, GL_FALSE, sizeof(Texcoord), nullptr);
+        glBindBuffer(GL_ARRAY_BUFFER, texcoordBuffer_);
+        glBufferData(GL_ARRAY_BUFFER, vertexCount_ * sizeof(Texcoord), texcoords_, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(texcoordInput_);
+        glVertexAttribPointer(texcoordInput_, 2, GL_FLOAT, GL_FALSE, sizeof(Texcoord), nullptr);
 
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this->indexBuffer);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, this->indexCount * sizeof(uint32_t), this->indices, GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer_);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indexCount_ * sizeof(uint32_t), indices_, GL_STATIC_DRAW);
 
         glBindVertexArray(0);
     }
@@ -353,7 +230,6 @@ public:
                 mat[0][0] = m00;
                 mat[1][1] = m11;
             }
-
         } else {
             // width and height are exchanged
             if (size.width * image.width > size.height * image.height) {
@@ -388,12 +264,12 @@ public:
         mat[3][3] = 1;
 
         // set matrix
-        glUseProgram(this->shader);
-        glUniformMatrix4fv(this->matUniform, 1, false, mat[0]);
+        glUseProgram(shader_);
+        glUniformMatrix4fv(matUniform_, 1, false, mat[0]);
         glUseProgram(0);
 
         // set texture data
-        glBindTexture(GL_TEXTURE_2D, this->texture);
+        glBindTexture(GL_TEXTURE_2D, texture_);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexImage2D(GL_TEXTURE_2D, 0,  GL_RGB8, image.width, image.height, 0, GL_RGB, GL_UNSIGNED_BYTE, image.data);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
@@ -402,16 +278,16 @@ public:
 
     void draw() {
         // set program
-        glUseProgram(this->shader);
+        glUseProgram(shader_);
 
-        glBindTexture(GL_TEXTURE_2D, this->texture);
+        glBindTexture(GL_TEXTURE_2D, texture_);
 
         // set vertex array object
-        glBindVertexArray(this->vao);
+        glBindVertexArray(vao_);
 
         // draw
         //glDrawArrays(GL_TRIANGLES, 0, vertexCount);
-        glDrawElements(GL_TRIANGLES, this->indexCount, GL_UNSIGNED_INT, nullptr);
+        glDrawElements(GL_TRIANGLES, indexCount_, GL_UNSIGNED_INT, nullptr);
 
         // reset
         glBindVertexArray(0);
@@ -419,30 +295,31 @@ public:
         glUseProgram(0);
     }
 
-    GLuint shader;
-    GLint matUniform;
-    GLint mapUniform;
-    GLint vertexInput;
-    GLint texcoordInput;
+protected:
+    GLuint shader_;
+    GLint matUniform_;
+    GLint mapUniform_;
+    GLint vertexInput_;
+    GLint texcoordInput_;
 
-    GLuint texture;
+    GLuint texture_;
 
-    int vertexCount;
-    int indexCount;
-    GLuint vertexBuffer;
-    GLuint texcoordBuffer;
-    GLuint indexBuffer;
+    int vertexCount_;
+    int indexCount_;
+    GLuint vertexBuffer_;
+    GLuint texcoordBuffer_;
+    GLuint indexBuffer_;
 
-    GLuint vao;
+    GLuint vao_;
 
-    static char const *vertexShaderCode;
-    static char const *fragmentShaderCode;
-    static Vertex const vertices[4];
-    static Texcoord const texcoords[4];
-    static uint32_t const indices[6];
+    static char const *vertexShaderCode_;
+    static char const *fragmentShaderCode_;
+    static Vertex const vertices_[4];
+    static Texcoord const texcoords_[4];
+    static uint32_t const indices_[6];
 };
 
-char const *Image::vertexShaderCode = R"SHADER(#version 330
+char const *Image::vertexShaderCode_ = R"SHADER(#version 330
 uniform mat4 mat;
 in vec4 vertex;
 in vec2 texcoord;
@@ -452,7 +329,7 @@ void main() {
     uv = texcoord;
 })SHADER";
 
-char const *Image::fragmentShaderCode = R"SHADER(#version 330
+char const *Image::fragmentShaderCode_ = R"SHADER(#version 330
 uniform sampler2D map;
 in vec2 uv;
 out vec4 pixel;
@@ -462,21 +339,21 @@ void main() {
 
 
 
-Vertex const Image::vertices[4] = {
+Vertex const Image::vertices_[4] = {
     {-1, -1, 0},
     { 1, -1, 0},
     {-1,  1, 0},
     { 1,  1, 0}
 };
 
-Texcoord const Image::texcoords[4] = {
+Texcoord const Image::texcoords_[4] = {
     {0, 1},
     {1, 1},
     {0, 0},
     {1, 0}
 };
 
-uint32_t const Image::indices[6] = {
+uint32_t const Image::indices_[6] = {
     0, 1, 2,
     3, 2, 1
 };
@@ -497,97 +374,170 @@ std::vector<fs::path> getList(fs::path const &dir) {
     return list;
 }
 
+/// @brief Media type
+///
+enum class MediaType {
+    NONE,
+    PICTURE,
+    VIDEO
+};
+
+
+MediaType getMediaType(fs::path const &path) {
+    auto ext = path.extension().string();
+    if (ext == ".jpg" || ext == ".jpeg" || ext == ".JPG")
+        return MediaType::PICTURE;
+    else
+        return MediaType::NONE;
+}
 
 // MainWindow
 
 class MainWindow : public GuiWindow {
 public:
-
-    MainWindow(int width, int height, char const *title)
-        : GuiWindow(width, height, title)
+    MainWindow(int width, int height, char const *title, int timeShift, DstType dstType)
+        : GuiWindow(width, height, title), timeShift_(timeShift), dstType_(dstType)
     {
         fs::path dir = ".";
 
         // get list of directories in initial target directory
-        this->targetDir = fs::canonical(dir);
-        std::vector<fs::path> targetList = getList(this->targetDir);
+        targetDir_ = fs::canonical(dir);
+        std::vector<fs::path> targetList = getList(targetDir_);
 
         // read current directory to get list of imge files
         for (auto &entry : std::ranges::subrange(fs::directory_iterator(fs::path(dir)), {})) {
             fs::path const &path = entry.path();
 
-            // collect images
-            if (path.extension() == ".jpg" || path.extension() == ".JPG")
-                this->files.push_back(path);
+            // collect pictures and videos
+            if (getMediaType(path) != MediaType::NONE)
+                files_.push_back(path);
         }
-        if (this->files.empty()) {
+        if (files_.empty()) {
             std::cerr << "No input files";
             return;
         }
-        std::sort(this->files.begin(), this->files.end());
+        std::sort(files_.begin(), files_.end());
 
 
         // create picture from first file in list
-        if (!this->files.empty()) {
-            this->picture = new Picture(dir / this->files[0], *this);
-
-            // pre-set input field for new directory with date of picture
-            strncpy((char *)this->newDirectoryBuffer, picture->date.c_str(), 10);
-            this->newDirectoryBuffer[10] = 0;
+        if (!files_.empty()) {
+            loadMedia(dir / files_[0]);
         } else {
             // clear input field for new directory
-            this->newDirectoryBuffer[10] = 0;
+            newDirectoryBuffer_[0] = 0;
         }
     }
 
     ~MainWindow() override {
-        delete this->picture;
+        delete media_;
     }
 
-    bool empty() {return this->files.empty();}
+    bool empty() {return files_.empty();}
 
 protected:
+
+    void updateUtcTime() {
+        auto &meta = media_->meta;
+
+        if (meta.localTime) {
+            // convert date/time to UTC
+            auto time = meta.time - timeShift_ * 1h;
+
+            // detect daylight saving time
+            auto systemTime = std::chrono::clock_cast<std::chrono::system_clock>(time);
+            auto tt = std::chrono::system_clock::to_time_t(systemTime);
+            tm t = *gmtime(&tt); // UTC
+            //tm t = *localtime(&tt);
+            if (isDst(dstType_, 1900 + t.tm_year, t.tm_mon + 1, t.tm_mday, (t.tm_wday == 0) ? 7 : t.tm_wday)) {
+                time -= 1h;
+            }
+            utcTime_ = time;
+        } else {
+            utcTime_ = meta.time;
+        }
+        utcTimeString_ = std::format("{0:%F} {0:%R}", utcTime_);
+    }
+
+    void loadMedia(const fs::path &path) {
+        // delete old media
+        delete media_;
+        media_ = nullptr;
+
+        // load new media
+        switch (getMediaType(path)) {
+        case MediaType::PICTURE:
+            media_ = new Picture(path);
+            break;
+        default:
+            return;
+        }
+        auto &meta = media_->meta;
+
+        // convert date/time
+        // https://omegaup.com/docs/cpp/en/cpp/chrono/format.html
+        // %F = %Y-%m-%d
+        // %R = %H:%M
+        // %T = %H:%M:%S
+        metaTimeString_ = std::format("{0:%F} {0:%R}", meta.time);
+        updateUtcTime();
+
+        // pre-set input field for new directory with date of picture
+        strncpy((char *)newDirectoryBuffer_, metaTimeString_.c_str(), 10);
+        newDirectoryBuffer_[10] = 0;
+
+        // copy geo location to clipboard
+        std::stringstream geo;
+        if (meta.latitude != 0.0 && meta.longitude != 0.0)
+            geo << meta.latitude << ", " << meta.longitude;
+        setClipboard(geo.str());
+    }
+
     bool onKey(ImGuiKey key, int scancode, int action, int modifiers, bool neededByGui) override {
         if (action == GLFW_PRESS) {
             // esc: exit
-            if (key == ImGuiKey::ImGuiKey_Escape)
+            if (key == ImGuiKey::ImGuiKey_Escape) {
                 close();
-
-            // up/down: select next/pevious image
-            bool next = key == ImGuiKey::ImGuiKey_DownArrow || key == ImGuiKey::ImGuiKey_RightArrow;
-            bool prev = key == ImGuiKey::ImGuiKey_UpArrow || key == ImGuiKey::ImGuiKey_LeftArrow;
-            if (next || prev) {
-                int count = int(this->files.size());
-                this->fileIndex = (this->fileIndex + (next ? 1 : count - 1)) % count;
-
-                // show new picture
-                delete this->picture;
-                this->picture = new Picture(this->files[this->fileIndex], *this);
-
-                // pre-set input field for new directory with date of picture
-                strncpy((char *)this->newDirectoryBuffer, picture->date.c_str(), 10);
-                this->newDirectoryBuffer[10] = 0;
+                return true;
             }
 
-            // shift-space: move image
-            if (key == ImGuiKey::ImGuiKey_Space && (modifiers & GLFW_MOD_SHIFT) != 0) {
-                fs::path src = this->files[this->fileIndex];
-                fs::path dst = this->targetDir / src.filename();
-                fs::rename(src, dst);
+            if (!neededByGui && !files_.empty()) {
+                // up/down: select next/pevious image
+                bool next = key == ImGuiKey::ImGuiKey_DownArrow || key == ImGuiKey::ImGuiKey_RightArrow;
+                bool prev = key == ImGuiKey::ImGuiKey_UpArrow || key == ImGuiKey::ImGuiKey_LeftArrow;
+                if (next || prev) {
+                    int count = int(files_.size());
+                    fileIndex_ = (fileIndex_ + (next ? 1 : count - 1)) % count;
 
-                // set date
-                fs::last_write_time(dst, this->picture->time);
+                    // show next/previous picture
+                    loadMedia(files_[fileIndex_]);
 
-                // erase from list
-                this->files.erase(this->files.begin() + this->fileIndex);
-                this->fileIndex = std::min(this->fileIndex, int(this->files.size()) - 1);
+                    return true;
+                }
 
-                // show next picture
-                delete this->picture;
-                if (!this->files.empty())
-                    this->picture = new Picture(this->files[this->fileIndex], *this);
-                else
-                    this->picture = nullptr;
+                // shift-space: move image
+                if (key == ImGuiKey::ImGuiKey_Space /*&& (modifiers & GLFW_MOD_SHIFT) != 0*/) {
+                    fs::path src = files_[fileIndex_];
+                    fs::path dst = targetDir_ / src.filename();
+                    fs::rename(src, dst);
+
+                    // set date
+                    fs::last_write_time(dst, utcTime_);
+
+                    // erase from list
+                    files_.erase(files_.begin() + fileIndex_);
+                    fileIndex_ = std::min(fileIndex_, int(files_.size()) - 1);
+
+                    // show next picture
+                    if (!files_.empty()) {
+                        loadMedia(files_[fileIndex_]);
+                    } else {
+                        // clear media
+                        delete media_;
+                        media_ = nullptr;
+                    }
+
+                    return true;
+                }
             }
         }
         return false;
@@ -596,18 +546,18 @@ protected:
     void onDraw(State const &state) override {
         // target directory selector
         {
-            std::u8string target = this->targetDir.filename().u8string() + u8"###target";
+            std::u8string target = targetDir_.filename().u8string() + u8"###target";
             if (ImGui::Begin((char *)target.c_str(), nullptr, 0)) {
                 // input for new directory
-                if (ImGui::InputText("New Directory", (char *)this->newDirectoryBuffer, std::size(this->newDirectoryBuffer),
+                if (ImGui::InputText("New Directory", (char *)newDirectoryBuffer_, std::size(newDirectoryBuffer_),
                     ImGuiInputTextFlags_EnterReturnsTrue))
                 {
                     // create and enter new subdirectory
-                    fs::path newDirectory = this->newDirectoryBuffer;
-                    fs::create_directory(this->targetDir / newDirectory);
-                    this->newDirectoryBuffer[0] = 0;
-                    this->targetDir /= newDirectory;
-                    this->targetList = getList(this->targetDir);
+                    fs::path newDirectory = newDirectoryBuffer_;
+                    fs::create_directory(targetDir_ / newDirectory);
+                    newDirectoryBuffer_[0] = 0;
+                    targetDir_ /= newDirectory;
+                    targetList_ = getList(targetDir_);
                 }
 
                 // list box containing subdirectories
@@ -618,11 +568,11 @@ protected:
                 if (ImGui::BeginListBox("##list", ImVec2(-FLT_MIN, -FLT_MIN))) {
                     // parent directory
                     if (ImGui::Selectable("..", false)) {
-                        fs::path currentDirectory = this->targetDir.filename();
+                        fs::path currentDirectory = targetDir_.filename();
 
                         // exit to parent directory
-                        this->targetDir = this->targetDir.parent_path();
-                        newTargetList = getList(this->targetDir);
+                        targetDir_ = targetDir_.parent_path();
+                        newTargetList = getList(targetDir_);
                         applyTargetList = true;
 
                         // get index of the directory that we just exited
@@ -636,19 +586,19 @@ protected:
                     }
 
                     // subdirectories
-                    for (int i = 0; i < this->targetList.size(); ++i) {
-                        std::u8string path = this->targetList[i].u8string();
+                    for (int i = 0; i < targetList_.size(); ++i) {
+                        std::u8string path = targetList_[i].u8string();
                         if (ImGui::Selectable((char *)path.c_str(), false)) {
                             // enter subdirectory
-                            this->targetDir /= this->targetList[i];
-                            newTargetList = getList(this->targetDir);
+                            targetDir_ /= targetList_[i];
+                            newTargetList = getList(targetDir_);
                             applyTargetList = true;
                         }
 
                         // check if we exited a directory and we have to scroll to its location
-                        if (i == this->selectedTarget) {
+                        if (i == selectedTarget_) {
                             ImGui::SetScrollHereY();
-                            this->selectedTarget = -1;
+                            selectedTarget_ = -1;
                         }
                     }
                     ImGui::EndListBox();
@@ -657,66 +607,105 @@ protected:
 
                 // apply new list of directories in target directory when a directory was selected by the user
                 if (applyTargetList)
-                    this->targetList.swap(newTargetList);
-                this->selectedTarget = selectedTarget;
+                    targetList_.swap(newTargetList);
+                selectedTarget_ = selectedTarget;
             }
             ImGui::End();
         }
 
-        // image info
-        {
-            std::string info = this->picture->date.substr(0, 10) + "###info";
-            //std::string info = this->picture->name + "###info";
-            if (ImGui::Begin(info.c_str(), nullptr, 0)) {
-                // ISO date
-                ImGui::LabelText("Date", "%s", this->picture->date.c_str());
+        if (media_ != nullptr) {
+            // get image data (pixel data is owned by media)
+            auto imageData = media_->getImageData();
 
+            // image info
+            std::string info = metaTimeString_.substr(0, 10) + "###info";
+            //std::string info = picture->name + "###info";
+            if (ImGui::Begin(info.c_str(), nullptr, 0)) {
                 // image size
-                std::string size = std::to_string(this->picture->width) + " x " + std::to_string(this->picture->height);
+                std::string size = std::to_string(imageData.width) + " x " + std::to_string(imageData.height);
                 ImGui::LabelText("Size", "%s", size.c_str());
 
                 // exists in target directory (by file name)?
-                bool exists = fs::exists(this->targetDir / this->files[this->fileIndex].filename());
+                bool exists = fs::exists(targetDir_ / files_[fileIndex_].filename());
                 ImGui::LabelText("Exists", "%s", exists ? "true" : "false");
+
+                // ISO date
+                ImGui::LabelText("Media Time", "%s", metaTimeString_.c_str());
+                ImGui::LabelText("UTC Time", "%s", utcTimeString_.c_str());
+
+                // time shift
+                if (ImGui::InputInt("Time Shift (h)", &timeShift_)) {
+                    updateUtcTime();
+                }
+                static const char* dstItems[] = {"None", "EU", "US"};
+                if (ImGui::BeginCombo("DST", dstItems[int(dstType_)])) {
+                    for (int i = 0; i < std::size(dstItems); ++i) {
+                        if (ImGui::Selectable(dstItems[i], dstType_ == DstType(i))) {
+                            dstType_ = DstType(i);
+                            updateUtcTime();
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
             }
             ImGui::End();
+
+            // clear screen
+            glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+
+            // render image
+            image_.set(state.framebufferSize, imageData);
+            image_.draw();
         }
 
         ImGui::Render();
-
-        // clear screen
-        glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        // render image
-        this->image.set(state.framebufferSize, picture->getImage());
-        this->image.draw();
 
         drawGui();
     }
 
 
     // source images
-    std::vector<fs::path> files;
-    int fileIndex = 0;
-    Picture* picture = nullptr;
+    std::vector<fs::path> files_;
+    int fileIndex_ = 0;
+
+    // picture or video
+    Media *media_ = nullptr;
+    std::chrono::time_point<std::chrono::file_clock> utcTime_;
+    std::string metaTimeString_;
+    std::string utcTimeString_;
+    int timeShift_;
+    DstType dstType_;
 
     // target directory and list of directories in target directory
-    fs::path targetDir;
-    std::vector<fs::path> targetList;
-    int selectedTarget = -1;
+    fs::path targetDir_;
+    std::vector<fs::path> targetList_;
+    int selectedTarget_ = -1;
 
+    // image that is rendered onto the screen
+    Image image_;
 
-    // class for rendering a picture onto the screen
-    Image image;
-
-    char8_t newDirectoryBuffer[64];
+    char8_t newDirectoryBuffer_[64];
 };
 
 
-
+/// Usage: picsort.exe [timeShift] [dstType]
+///   timeShift: Time shift of local time to UTC in hours (e.g., Berlin: 1, Las Vegas: -8)
+///   dstType: Daylight saving time type (NONE, EU, US)
+/// Example: picsort.exe 1 EU
 int main(int argc, const char **argv) {
-    MainWindow window(800, 800, "PicSorter");
+    int timeShift = 1;
+    DstType dstType = DstType::NONE;
+    if (argc > 1)
+        timeShift = std::atoi(argv[1]);
+    if (argc > 2) {
+        auto arg = std::string_view(argv[2]);
+        if (arg == "EU")
+            dstType = DstType::EU;
+        else if (arg == "US")
+            dstType = DstType::US;
+    }
+    MainWindow window(800, 800, "PicSorter", timeShift, dstType);
 
     // main loop
     int frameCount = 0;

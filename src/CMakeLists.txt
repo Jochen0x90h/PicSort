@@ -8,7 +8,10 @@ add_executable(picsort
 	imgui/Fonts.hpp
 	GuiWindow.cpp
 	GuiWindow.hpp
+	Media.hpp
 	picsort.cpp
+	Picture.cpp
+	Picture.hpp
 	TinyEXIF.cpp
 	TinyEXIF.h
 )
