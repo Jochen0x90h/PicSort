@@ -4,9 +4,9 @@ from conan.tools.cmake import CMake
 
 
 class Project(ConanFile):
-    name = "PicSort"
-    description = "Tool for sorting pictures"
-    url = "https://github.com/Jochen0x90h/PicSort"
+    name = "pic-sort-tool"
+    description = "Tool for sorting pictures into directories"
+    url = "https://github.com/Jochen0x90h/pic-sort-tool"
     license = "MIT"
     settings = "os", "compiler", "build_type", "arch"
     default_options = {}
@@ -14,10 +14,10 @@ class Project(ConanFile):
     exports_sources = "conanfile.py", "CMakeLists.txt", "src/*", "test/*"
     requires = [
         "glfw/3.4",
-        "imgui/1.92.2b",
-        "libjpeg-turbo/3.1.1",
+        "imgui/1.92.7",
+        "libjpeg-turbo/3.1.4.1",
         "tinyxml2/11.0.0",
-        "ffmpeg/8.0.1"
+        #"ffmpeg/8.1"
     ]
 
 

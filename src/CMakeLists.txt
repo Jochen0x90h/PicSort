@@ -1,5 +1,5 @@
-# picsort: GUI tool for sorting pictures
-add_executable(picsort
+# pic-sort-tool: GUI tool for sorting pictures
+add_executable(pic-sort-tool
 	glad/glad.c
 	glad/glad.h
 	glad/khrplatform.h
@@ -9,13 +9,13 @@ add_executable(picsort
 	GuiWindow.cpp
 	GuiWindow.hpp
 	Media.hpp
-	picsort.cpp
+	pic-sort-tool.cpp
 	Picture.cpp
 	Picture.hpp
 	TinyEXIF.cpp
 	TinyEXIF.h
 )
-target_link_libraries(picsort
+target_link_libraries(pic-sort-tool
 	PRIVATE
 		glfw
 		imgui::imgui
@@ -25,17 +25,17 @@ target_link_libraries(picsort
 		tinyxml2::tinyxml2
 )
 
-# picfix: Command line tool for fixing file data from exif data
-add_executable(picfix
-	picfix.cpp
+# pic-date-tool: Command line tool for fixing the file date from exif data
+add_executable(pic-date-tool
+	pic-date-tool.cpp
 	TinyEXIF.cpp
 	TinyEXIF.h
 )
-target_link_libraries(picfix
+target_link_libraries(pic-date-tool
 	PRIVATE
 		tinyxml2::tinyxml2
 )
 
 
 # install
-install(TARGETS picsort picfix)
+install(TARGETS pic-sort-tool pic-date-tool)

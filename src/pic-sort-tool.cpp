@@ -496,7 +496,7 @@ protected:
         if (action == GLFW_PRESS) {
             // esc: exit
             if (key == ImGuiKey::ImGuiKey_Escape) {
-                close();
+                setShouldClose(true);
                 return true;
             }
 
@@ -694,7 +694,7 @@ protected:
 ///   dstType: Daylight saving time type (NONE, EU, US)
 /// Example: picsort.exe 1 EU
 int main(int argc, const char **argv) {
-    int timeShift = 1;
+    int timeShift = 0;
     DstType dstType = DstType::NONE;
     if (argc > 1)
         timeShift = std::atoi(argv[1]);
@@ -705,13 +705,13 @@ int main(int argc, const char **argv) {
         else if (arg == "US")
             dstType = DstType::US;
     }
-    MainWindow window(800, 800, "PicSorter", timeShift, dstType);
+    MainWindow window(1200, 1000, "PicSorter", timeShift, dstType);
 
     // main loop
     int frameCount = 0;
     auto start = std::chrono::steady_clock::now();
     int count = 5;
-    while (!window.isClosed()) {
+    while (!window.shouldClose()) {
         auto frameStart = std::chrono::steady_clock::now();
 
         // process events

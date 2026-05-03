@@ -1,3 +1,4 @@
+#include "dst.hpp"
 #include "TinyEXIF.h" // https://github.com/cdcseacave/TinyEXIF
 #include <iostream>
 #include <fstream>
@@ -11,7 +12,7 @@
 namespace fs = std::filesystem;
 
 // https://forum.arduino.cc/t/rtc-mit-sommerzeit/168068
-bool summertime_EU(int year, int month, int day, int hour, int tzHours)
+/*bool summertime_EU(int year, int month, int day, int hour, int tzHours)
 // European Daylight Savings Time calculation by "jurs" for German Arduino Forum
 // input parameters: "normal time" for year, month, day, hour and tzHours (0=UTC, 1=MEZ)
 // return value: returns true during Daylight Saving Time, false otherwise
@@ -22,10 +23,10 @@ bool summertime_EU(int year, int month, int day, int hour, int tzHours)
         return true;
     else
         return false;
-}
+}*/
 
 
-void fix(const fs::path &path) {
+void fix(const fs::path &path, int timeShift, DstType dstType) {
     // determine jpeg size
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     int jpegSize = int(file.tellg());
@@ -43,12 +44,26 @@ void fix(const fs::path &path) {
     if (exif.Fields) {
         // get date
         if (!exif.DateTime.empty()) {
+            // parse time
             auto in = std::istringstream(exif.DateTime);
-            std::chrono::time_point<std::chrono::file_clock> time;
-            in >> std::chrono::parse("%Y:%m:%d %H:%M:%S", time);
-            if (time.time_since_epoch().count() != 0) {
+            std::chrono::time_point<std::chrono::file_clock> metaTime;
+            in >> std::chrono::parse("%Y:%m:%d %H:%M:%S", metaTime);
+            if (metaTime.time_since_epoch().count() != 0) {
                 using namespace std::chrono_literals;
 
+                // convert date/time to UTC
+                auto time = metaTime - timeShift * 1h;
+
+                // detect daylight saving time
+                auto systemTime = std::chrono::clock_cast<std::chrono::system_clock>(time);
+                auto tt = std::chrono::system_clock::to_time_t(systemTime);
+                tm t = *gmtime(&tt); // UTC
+                //tm t = *localtime(&tt);
+                if (isDst(dstType, 1900 + t.tm_year, t.tm_mon + 1, t.tm_mday, (t.tm_wday == 0) ? 7 : t.tm_wday)) {
+                    time -= 1h;
+                }
+
+                /*
                 // calc UTC time from exif time for Berlin
                 time -= 1h; // convert from MEZ to UTC assuming winter time
                 auto systemTime = std::chrono::clock_cast<std::chrono::system_clock>(time);
@@ -59,7 +74,7 @@ void fix(const fs::path &path) {
                     // summer time
                     time -= 1h;
                 }
-
+*/
                 // set file date
                 fs::last_write_time(path, time);
             }
@@ -67,24 +82,37 @@ void fix(const fs::path &path) {
     }
 }
 
-void doDirectory(const fs::path &path) {
-	if (fs::is_directory(path)) {
-		fs::directory_iterator end; // default construction yields past-the-end
-		for (fs::directory_iterator it(path); it != end; ++it) {
-			std::cout << fs::path(*it).string() << std::endl;
-			doDirectory(*it);
-		}
-	} else {
+void doDirectory(const fs::path &path, int timeShift, DstType dstType) {
+    if (fs::is_directory(path)) {
+        fs::directory_iterator end; // default construction yields past-the-end
+        for (fs::directory_iterator it(path); it != end; ++it) {
+            //std::cout << fs::path(*it).string() << std::endl;
+            doDirectory(*it, timeShift, dstType);
+        }
+    } else {
         std::string ext = path.extension().string();
         if (ext == ".jpg" || ext == ".JPG") {
-		    fix(path);
-	    }
+            std::cout << path.string() << std::endl;
+            fix(path, timeShift, dstType);
+        }
     }
 }
 
 
 int main(int argc, const char **argv) {
-    doDirectory(".");
+    int timeShift = 0;
+    DstType dstType = DstType::NONE;
+    if (argc > 1)
+        timeShift = std::atoi(argv[1]);
+    if (argc > 2) {
+        auto arg = std::string_view(argv[2]);
+        if (arg == "EU")
+            dstType = DstType::EU;
+        else if (arg == "US")
+            dstType = DstType::US;
+    }
+
+    doDirectory(".", timeShift, dstType);
 
     return 0;
 }

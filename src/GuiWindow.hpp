@@ -37,14 +37,6 @@ public:
     /// @return scale factor
     float getScale() {return this->scale;}
 
-    /// @brief Returns true when when window was closed by the user. Call this from the main loop.
-    /// @return true when closed by user
-    bool isClosed() {return glfwWindowShouldClose(this->window);}
-
-    /// @brief Call to indicate that the window should close.
-    ///
-    void close() {glfwSetWindowShouldClose(window, GLFW_TRUE);}
-
     /// @brief Get window size.
     /// @return
     Size<int> getSize();
@@ -57,6 +49,14 @@ public:
     void setTitle(const std::string &title) {glfwSetWindowTitle(this->window, title.c_str());}
 
     void setClipboard(const std::string &str) {glfwSetClipboardString(this->window, str.c_str());}
+
+    /// @brief Returns true when the window should close e.g. because the user clicked the close icon.
+    /// @return true when the window should close
+    bool shouldClose() {return glfwWindowShouldClose(this->window);}
+
+    /// @brief Call to indicate that the window should close.
+    /// @param state State indicating if the window should close
+    void setShouldClose(bool state) {glfwSetWindowShouldClose(window, state);}
 
 protected:
     /// @brief Called on key event.

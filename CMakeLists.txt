@@ -1,13 +1,10 @@
 cmake_minimum_required(VERSION 3.25)
 
 # set project
-project(picsort)
+project(pic-sort-tool C CXX)
 
-#set(CMAKE_VERBOSE_MAKEFILE ON)
-
-# use C++20 standard by default
-set(CMAKE_CXX_STANDARD 20)
-
+# configure languages
+set(CMAKE_CXX_STANDARD 23)
 
 # enable address sanitizer
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
