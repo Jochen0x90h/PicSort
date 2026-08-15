@@ -9,12 +9,13 @@ namespace fs = std::filesystem;
 
 class Picture : public Media {
 public:
-    Picture(fs::path path);
+    Picture(const fs::path &path);
 
     ~Picture() override;
 
     // Media methods
     ImageData getImageData() override;
+    MetaData getMetaData() override;
 
 protected:
     void setError(char const *action);
@@ -27,4 +28,6 @@ protected:
     int height_;
     int orientation_ = 0;
     unsigned char *imgBuf_ = nullptr;
+
+    MetaData metaData_;
 };

@@ -1,6 +1,7 @@
 #include "dst.hpp"
 #include "GuiWindow.hpp"
 #include "Picture.hpp"
+#include "Video.hpp"
 #include "glad/glad.h"
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -200,7 +201,7 @@ public:
         float m00 = 1;
         float m11 = 1;
         if (image.orientation <= 4) {
-            // width and height are not exchanged
+            // orientation 1-4: width and height are not exchanged
             if (size.width * image.height > size.height * image.width) {
                 m00 = float(size.height * image.width) / float(size.width * image.height);
             } else {
@@ -231,7 +232,7 @@ public:
                 mat[1][1] = m11;
             }
         } else {
-            // width and height are exchanged
+            // orientation 5-8: width and height are exchanged
             if (size.width * image.width > size.height * image.height) {
                 m00 = float(size.height * image.height) / float(size.width * image.width);
             } else {
@@ -387,6 +388,8 @@ MediaType getMediaType(fs::path const &path) {
     auto ext = path.extension().string();
     if (ext == ".jpg" || ext == ".jpeg" || ext == ".JPG")
         return MediaType::PICTURE;
+    else if (ext == ".mp4")
+        return MediaType::VIDEO;
     else
         return MediaType::NONE;
 }
@@ -434,10 +437,14 @@ public:
 
     bool empty() {return files_.empty();}
 
+    bool isVideo() {
+        return media_ && media_->getMetaData().frameDuration > 0;
+    }
+
 protected:
 
     void updateUtcTime() {
-        auto &meta = media_->meta;
+        auto meta = media_->getMetaData();
 
         if (meta.localTime) {
             // convert date/time to UTC
@@ -462,16 +469,28 @@ protected:
         // delete old media
         delete media_;
         media_ = nullptr;
+        newDirectoryBuffer_[0] = 0;
 
         // load new media
-        switch (getMediaType(path)) {
-        case MediaType::PICTURE:
-            media_ = new Picture(path);
-            break;
-        default:
+        try {
+            switch (getMediaType(path)) {
+            case MediaType::PICTURE:
+                media_ = new Picture(path);
+                break;
+            case MediaType::VIDEO:
+                media_ = new Video(path);
+                break;
+            default:
+                return;
+            }
+        } catch (std::exception &e) {
+            // failed to load media file
+            std::cerr << "Error: " << e.what() << std::endl;
             return;
         }
-        auto &meta = media_->meta;
+
+        // get meta data
+        auto meta = media_->getMetaData();
 
         // convert date/time
         // https://omegaup.com/docs/cpp/en/cpp/chrono/format.html
@@ -613,6 +632,10 @@ protected:
             ImGui::End();
         }
 
+        // clear screen
+        glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
         if (media_ != nullptr) {
             // get image data (pixel data is owned by media)
             auto imageData = media_->getImageData();
@@ -650,9 +673,6 @@ protected:
             }
             ImGui::End();
 
-            // clear screen
-            glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT);
 
             // render image
             image_.set(state.framebufferSize, imageData);
@@ -715,7 +735,9 @@ int main(int argc, const char **argv) {
         auto frameStart = std::chrono::steady_clock::now();
 
         // process events
-        if (count > 0) {
+        if (window.isVideo()) {
+            glfwPollEvents();
+        } else if (count > 0) {
             glfwPollEvents();
             --count;
         } else {

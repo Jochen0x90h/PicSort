@@ -9,15 +9,44 @@ class Project(ConanFile):
     url = "https://github.com/Jochen0x90h/pic-sort-tool"
     license = "MIT"
     settings = "os", "compiler", "build_type", "arch"
-    default_options = {}
+    default_options = {
+        "ffmpeg/*:with_lzma": False,
+        "ffmpeg/*:with_libaom": False,
+        "ffmpeg/*:with_libdav1d": False,
+        "ffmpeg/*:with_freetype": False,
+        "ffmpeg/*:with_libx264": False,
+        "ffmpeg/*:with_libx265": False,
+        "ffmpeg/*:with_libvpx": False,
+        "ffmpeg/*:with_openh264": False,
+        "ffmpeg/*:with_libsvtav1": False,
+        "ffmpeg/*:with_libwebp": False,
+        "ffmpeg/*:with_openjpeg": False,
+        "ffmpeg/*:with_libmp3lame": False,
+        "ffmpeg/*:with_libfdk_aac": False,
+        "ffmpeg/*:with_opus": False,
+        "ffmpeg/*:with_vorbis": False,
+        "ffmpeg/*:with_bzip2": False,
+        "ffmpeg/*:with_ssl": False,
+        "ffmpeg/*:with_zeromq": False,
+        "ffmpeg/*:with_sdl": False,
+        "ffmpeg/*:with_fontconfig": False,
+        "ffmpeg/*:avdevice": False,
+        "ffmpeg/*:with_programs": False,
+        "ffmpeg/*:postproc": False,
+        "ffmpeg/*:avfilter": False,
+        "ffmpeg/*:postproc": False,
+        "ffmpeg/*:avdevice": False,
+        "ffmpeg/*:with_asm": False,
+    }
+
     generators = "CMakeDeps", "CMakeToolchain"
     exports_sources = "conanfile.py", "CMakeLists.txt", "src/*", "test/*"
     requires = [
         "glfw/3.4",
-        "imgui/1.92.7",
-        "libjpeg-turbo/3.1.4.1",
+        "imgui/1.92.8",
+        "libjpeg-turbo/3.2.0",
         "tinyxml2/11.0.0",
-        #"ffmpeg/8.1"
+        "ffmpeg/8.1.2"
     ]
 
 

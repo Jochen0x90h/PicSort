@@ -9,8 +9,8 @@
 #include <fstream>
 
 
-Picture::Picture(fs::path path) {
-    auto &meta = const_cast<MetaData &>(this->meta);
+Picture::Picture(const fs::path &path) {
+    auto &meta = metaData_;
 
     // determine jpeg size
     std::ifstream file(path, std::ios::binary | std::ios::ate);
@@ -88,6 +88,10 @@ Picture::~Picture() {
 
 ImageData Picture::getImageData() {
     return {width_, height_, orientation_, imgBuf_};
+}
+
+MetaData Picture::getMetaData() {
+    return metaData_;
 }
 
 void Picture::setError(char const *action) {

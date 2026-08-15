@@ -25,7 +25,7 @@ struct ImageData {
     // image orientation, see http://jpegclub.org/exif_orientation.html
     int orientation;
 
-    // image data
+    // pointer to image data, rgb24 format, 3 bytes per pixel, row-major order, top-to-bottom
     unsigned char *data;
 };
 
@@ -39,6 +39,5 @@ public:
     /// @return Image data
     virtual ImageData getImageData() = 0;
 
-
-    const MetaData meta;
+    virtual MetaData getMetaData() = 0;
 };
